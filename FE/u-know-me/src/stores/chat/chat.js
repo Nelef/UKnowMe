@@ -448,7 +448,8 @@ export const useChatStore = defineStore('chat', {
       // if (this.camera) {
       //   this.camera.stop();
       // }
-      window.location.href = "https://uknowme.mooo.com/main";
+      // window.location.href = "https://uknowme.mooo.com/main";
+      window.location.href = "http://211.193.0.98:8888/main";
     },
 
     socketConnect(seq) {
@@ -456,7 +457,8 @@ export const useChatStore = defineStore('chat', {
       //socket test
       console.log("socket test");
       // 1. 웹소켓 클라이언트 객체 생성
-      const webSocket = new WebSocket("wss://uknowme.mooo.com:8443/ws/chat");
+      // const webSocket = new WebSocket("wss://uknowme.mooo.com:8443/ws/chat");
+      const webSocket = new WebSocket("ws://211.193.0.98:8888/ws/chat");
 
       this.webSocket = webSocket;
 

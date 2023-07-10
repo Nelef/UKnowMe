@@ -128,11 +128,13 @@ export const useAccountStore = defineStore('account', {
       }
     },
     naverLogin() {
-      const REIDRECT_URL = 'https://uknowme.mooo.com:8443/oauth2/authorization/naver?redirect_uri=https://uknowme.mooo.com:8443/member/oauth2/code/naver'
+      // const REIDRECT_URL = 'https://uknowme.mooo.com:8443/oauth2/authorization/naver?redirect_uri=https://uknowme.mooo.com:8443/member/oauth2/code/naver'
+      const REIDRECT_URL = 'http://211.193.0.98:8888/oauth2/authorization/naver?redirect_uri=http://211.193.0.98:8888/member/oauth2/code/naver'
       window.open(REIDRECT_URL, '네이버로그인', this.getTelPopupFeatures());
     },
     kakaoLogin() {
-      const REIDRECT_URL = 'https://uknowme.mooo.com:8443/oauth2/authorization/kakao?redirect_uri=https://uknowme.mooo.com:8443/member/oauth2/code/kakao'
+      // const REIDRECT_URL = 'https://uknowme.mooo.com:8443/oauth2/authorization/kakao?redirect_uri=https://uknowme.mooo.com:8443/member/oauth2/code/kakao'
+      const REIDRECT_URL = 'http://211.193.0.98:8888/oauth2/authorization/kakao?redirect_uri=http://211.193.0.98:8888/member/oauth2/code/kakao'
       window.open(REIDRECT_URL, '카카오로그인', this.getTelPopupFeatures());
     },
     getTelPopupFeatures() {
@@ -329,7 +331,7 @@ export const useAccountStore = defineStore('account', {
         alert('형식에 맞지 않는 번호입니다.')
       } else {
         this.sendTel = 1
-        window.open(`https://uknowme.mooo.com/tc?pn=${tel}`, 'Pass인증', this.getTelPopupFeatures());
+        window.open(`http://211.193.0.98:3000/tc?pn=${tel}`, 'Pass인증', this.getTelPopupFeatures());
       }
     },
     certicateTel(num) {

@@ -51,7 +51,8 @@ export default {
     createReport(reportingMemberSeq, accusedMemberSeq) {
       const account = useAccountStore()
       axios({
-        url: `https://uknowme.mooo.com:8443/report/create`,
+        // url: `https://uknowme.mooo.com:8443/report/create`,
+        url: `http://211.193.0.98:8888/report/create`,
         method: 'post',
         data: {
           "accusedMemberSeq": accusedMemberSeq,
