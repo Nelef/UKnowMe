@@ -78,7 +78,7 @@ axios.defaults.headers.post["Content-Type"] = "application/json";
 
 // const OPENVIDU_SERVER_URL = "hFttps://" + location.hostname + ":4443";
 // const OPENVIDU_SERVER_URL = "https://uknowme.mooo.com:4443";
-const OPENVIDU_SERVER_URL = "http://211.193.0.98:4443";
+const OPENVIDU_SERVER_URL = "https://211.193.0.98:4443";
 const OPENVIDU_SERVER_SECRET = "MY_SECRET";
 
 export default {

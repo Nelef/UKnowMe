@@ -88,8 +88,7 @@ export default {
         console.log("socket start");
         // 1. 웹소켓 클라이언트 객체 생성
         self.webSocket = new WebSocket(
-          // "wss://uknowme.mooo.com:8443/ws/matching"
-          "ws://211.193.0.98:8888/ws/matching"
+          "wss://uknowme-back.imoneleft.synology.me/ws/matching"
         );
 
         // 2. 웹소켓 이벤트 처리
