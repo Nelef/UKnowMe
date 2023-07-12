@@ -1,5 +1,9 @@
 # 💟 너, 나 알아?
-## 해보기! - (https://uknowme.imoneleft.synology.me)
+
+- 해보기! - (https://uknowme.imoneleft.synology.me)
+    - 남자테스트(id: test / pw: testtest1!)
+    - 여자테스트(id: test2 / pw: testtest2@)
+    - 직접 회원가입도 가능
 
 <div align="center">
     <img src="./assets/png/logo.png"/>
