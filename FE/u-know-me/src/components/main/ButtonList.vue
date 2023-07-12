@@ -44,6 +44,7 @@
     </div>
 
     <button class="matching-btn" @click="main.btnCh = 4">매칭 옵션 선택</button>
+    <button class="matching-btn" @click="oneMatchStart()">혼자 해보기</button>
   </div>
   <div id="myLocationInfo"></div>
 </template>
@@ -77,6 +78,9 @@ export default {
     return { main, account, SessionName, otherPeople };
   },
   methods: {
+    oneMatchStart() {
+      router.push({ name: "chat" })
+    },
     matchStart() {
       const self = this;
       // 나의 위치정보 추출
@@ -343,7 +347,7 @@ export default {
 .match-circle {
   position: absolute;
   right: 50px;
-  bottom: 50px;
+  bottom: 20px;
   display: grid;
 }
 #love-container {
@@ -420,6 +424,7 @@ export default {
   height: 50px;
   border: none;
   margin: 0;
+  margin-bottom: 10px;
   border-radius: 30px;
   filter: drop-shadow(0px 1.92647px 1.92647px rgba(0, 0, 0, 0.25));
   font-size: 15px;

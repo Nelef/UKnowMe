@@ -78,7 +78,7 @@ axios.defaults.headers.post["Content-Type"] = "application/json";
 
 // const OPENVIDU_SERVER_URL = "hFttps://" + location.hostname + ":4443";
 // const OPENVIDU_SERVER_URL = "https://uknowme.mooo.com:4443";
-const OPENVIDU_SERVER_URL = "https://211.193.0.98:4443";
+const OPENVIDU_SERVER_URL = "https://openvidu.imoneleft.synology.me:4443";
 const OPENVIDU_SERVER_SECRET = "MY_SECRET";
 
 export default {
@@ -287,13 +287,13 @@ export default {
               console.warn(
                 `No connection to OpenVidu Server. This may be a certificate error at ${OPENVIDU_SERVER_URL}`
               );
-              if (
-                window.confirm(
-                  `No connection to OpenVidu Server. This may be a certificate error at ${OPENVIDU_SERVER_URL}\n\nClick OK to navigate and accept it. If no certificate warning is shown, then check that your OpenVidu Server is up and running at "${OPENVIDU_SERVER_URL}"`
-                )
-              ) {
-                location.assign(`${OPENVIDU_SERVER_URL}/accept-certificate`);
-              }
+              // if (
+              //   window.confirm(
+              //     `No connection to OpenVidu Server. This may be a certificate error at ${OPENVIDU_SERVER_URL}\n\nClick OK to navigate and accept it. If no certificate warning is shown, then check that your OpenVidu Server is up and running at "${OPENVIDU_SERVER_URL}"`
+              //   )
+              // ) {
+              //   location.assign(`${OPENVIDU_SERVER_URL}/accept-certificate`);
+              // }
               reject(error.response);
             }
           });
