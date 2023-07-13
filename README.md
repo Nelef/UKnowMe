@@ -117,7 +117,7 @@ https://youtu.be/At3uHTK2e08?t=651
 저희 프로젝트의 문서와 저희 팀원들이 어떤 방법론에 맞춰 작업했는지 알고 싶으시다면 저희 프로젝트 노션 페이지를 방문해주세요!
 
 <div align="center">
-    <a href="https://determined-elderberry-389.notion.site/945d69f7786a4e45b7521cb83303cdb3">
+    <a href="https://verdant-land-491.notion.site/07c1afc319814ead9d03b2bfcb6bf1eb?pvs=4">
         <img src="https://img.shields.io/badge/notion-000000?style=for-the-badge&logo=Notion&logoColor=white">
     </a>
 </div>
