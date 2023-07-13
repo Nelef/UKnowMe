@@ -1,3 +1,11 @@
+# 소개 영상
+[![Video Label](http://img.youtube.com/vi/GFa_v6fIcCs/0.jpg)](https://youtu.be/GFa_v6fIcCs)
+https://youtu.be/GFa_v6fIcCs
+
+# 시연 영상
+[![Video Label](http://img.youtube.com/vi/At3uHTK2e08/0.jpg)](https://youtu.be/At3uHTK2e08?t=651)
+https://youtu.be/At3uHTK2e08?t=651
+
 # 💟 너, 나 알아?
 
 - 해보기! - (https://uknowme.imoneleft.synology.me)
