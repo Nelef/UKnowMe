@@ -1,3 +1,9 @@
+# 해보기!
+## https://uknowme.imoneleft.synology.me
+    - 남자테스트(id: test / pw: testtest1!)
+    - 여자테스트(id: test2 / pw: testtest2@)
+    - 직접 회원가입도 가능
+
 # 소개 영상
 [![Video Label](http://img.youtube.com/vi/GFa_v6fIcCs/0.jpg)](https://youtu.be/GFa_v6fIcCs)
 https://youtu.be/GFa_v6fIcCs
@@ -7,11 +13,6 @@ https://youtu.be/GFa_v6fIcCs
 https://youtu.be/At3uHTK2e08?t=651
 
 # 💟 너, 나 알아?
-
-- 해보기! - (https://uknowme.imoneleft.synology.me)
-    - 남자테스트(id: test / pw: testtest1!)
-    - 여자테스트(id: test2 / pw: testtest2@)
-    - 직접 회원가입도 가능
 
 <div align="center">
     <img src="./assets/png/logo.png"/>
