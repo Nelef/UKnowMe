@@ -105,7 +105,7 @@ https://youtu.be/At3uHTK2e08?t=651
 빌드 매뉴얼은 길어질 것 같아 따로 페이지를 만들어 두었습니다!
 
 <div align="center">
-    <a href="./assets/description/manual.md">
+    <a href="https://verdant-land-491.notion.site/5-66a55b95b4c84b808a07928323eda6e4">
         <img src="https://img.shields.io/badge/link-E6526F?style=for-the-badge&logo=Undertale&logoColor=white">
     </a>
 </div>
