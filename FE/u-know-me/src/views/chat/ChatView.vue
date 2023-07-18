@@ -1,5 +1,5 @@
 <template>
-  <HeartRain v-if="chat.heartRainFlag"/>
+  <HeartRain v-if="chat.heartRainFlag" />
   <div class="chat-body" id="main-container">
     <div id="session">
       <div
@@ -40,7 +40,9 @@
               style="position: absolute; left: 0%"
             ></canvas>
           </div>
-          <div><p>{{account.currentUser.nickname}}</p></div>
+          <div>
+            <p>{{ account.currentUser.nickname }}</p>
+          </div>
         </div>
         <user-video
           v-for="sub in subscribers"
@@ -78,7 +80,7 @@ axios.defaults.headers.post["Content-Type"] = "application/json";
 
 // const OPENVIDU_SERVER_URL = "hFttps://" + location.hostname + ":4443";
 // const OPENVIDU_SERVER_URL = "https://uknowme.mooo.com:4443";
-const OPENVIDU_SERVER_URL = "https://openvidu.imoneleft.synology.me:4443";
+const OPENVIDU_SERVER_URL = "https://openvidu.imoneleft.synology.me";
 const OPENVIDU_SERVER_SECRET = "MY_SECRET";
 
 export default {
@@ -141,9 +143,11 @@ export default {
   },
   mounted() {
     this.joinSession();
-    this.chat.systemMessagePrint("상호간에 매너채팅은 필수! 좋은 만남 보내세요~");
+    this.chat.systemMessagePrint(
+      "상호간에 매너채팅은 필수! 좋은 만남 보내세요~"
+    );
     setInterval(() => {
-      this.chat.keywordMessage()
+      this.chat.keywordMessage();
     }, 30000);
   },
   methods: {
