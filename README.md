@@ -1,3 +1,6 @@
+## 미리보기
+![img_2_6](https://github.com/user-attachments/assets/30594637-b9fa-4508-8be9-c088ff15d1f7)
+
 # 해보기!
 ## https://uknowme.imoneleft.synology.me
     - 남자테스트(id: test / pw: testtest1!)
