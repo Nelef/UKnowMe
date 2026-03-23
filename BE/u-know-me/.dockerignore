@@ -1,4 +1,9 @@
 .DS_Store
+.git
+.gitignore
+.idea
+.vscode
 .gradle
 build
 u-know-me-back.tar
+*.tar

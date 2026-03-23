@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+# Keep MariaDB and the app in one container for the current deployment shape.
 APP_HOME="${APP_HOME:-/usr/app}"
 ARTIFACT_NAME="${ARTIFACT_NAME:-u-know-me-0.0.1-SNAPSHOT.jar}"
 DB_DATA_DIR="${DB_DATA_DIR:-/var/lib/mysql}"

@@ -2,3 +2,4 @@ BE/u-know-me/src/main/java/com/ssafy/uknowme/model/dto/MatchingDto/Matching2VS2R
 BE/u-know-me/src/main/java/com/ssafy/uknowme/model/dto/MatchingDto/Matching1VS1ResponseDto.java
 BE/u-know-me/src/main/java/com/ssafy/uknowme/model/dto/MatchingDto/Matching2VS2RequestDto.java
 BE/u-know-me/src/main/java/com/ssafy/uknowme/model/dto/MatchingDto/Matching1VS1RequestDto.java
+*.tar

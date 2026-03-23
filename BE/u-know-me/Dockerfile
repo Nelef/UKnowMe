@@ -2,15 +2,14 @@
 FROM gradle:7.2.0-jdk-alpine AS TEMP_BUILD_IMAGE
 ENV APP_HOME=/usr/app
 WORKDIR $APP_HOME
-COPY build.gradle settings.gradle $APP_HOME/
-  
-COPY gradle $APP_HOME/gradle
-COPY --chown=gradle:gradle . /home/gradle/src
 USER root
-RUN chown -R gradle /home/gradle/src
 
-COPY . .
-RUN gradle clean build
+COPY gradlew build.gradle settings.gradle ./
+COPY gradle ./gradle
+RUN chmod +x gradlew
+
+COPY src ./src
+RUN ./gradlew --no-daemon clean build
     
 # actual container
 FROM eclipse-temurin:8-jre-alpine
