@@ -48,36 +48,11 @@
       아이디 또는 비밀번호를 잘못 입력했습니다.
       <br />입력하신 내용을 다시 확인해주세요.
     </div>
-    <div class="find-id-password">
-      <span @click="land.btnCh = 4">아이디/</span
-      ><span @click="land.btnCh = 5">비밀번호 찾기</span>
-    </div>
     <button class="login-btn">로그인</button>
   </form>
   <p class="login-signup">
     <span @click="land.btnCh = 2">계정이 필요하신가요?</span>
   </p>
-  <div class="hr-sect">SNS 계정으로 로그인하기</div>
-  <div class="flex justify-center align-center">
-    <div>
-      <img
-        @click="account.naverLogin()"
-        id="naver_login_icon"
-        class="sns-login"
-        src="@/assets/land/naver_login_icon.png"
-        alt="naver_login_icon"
-      />
-    </div>
-    <div>
-      <img
-        @click="account.kakaoLogin()"
-        class="sns-login"
-        src="@/assets/land/kakao_login_icon.png"
-        alt="kakao_login_icon"
-      />
-    </div>
-    <div id="snsLogin" @click="account.socialLogin()"></div>
-  </div>
 </template>
 
 <script>
@@ -104,26 +79,6 @@ export default {
 </script>
 
 <style>
-#naver_id_login {
-  z-index: -1;
-}
-.flex {
-  display: flex;
-}
-.justify-center {
-  justify-content: center;
-}
-.align-center {
-  align-items: center;
-}
-.sns-login {
-  width: 188px;
-  height: 48px;
-  margin-right: 12px;
-}
-.sns-login:hover {
-  cursor: pointer;
-}
 .signin-head {
   margin: 32px auto;
 }
@@ -142,9 +97,6 @@ export default {
   color: #c699ff;
   font-size: 20px;
   margin-left: 12px;
-}
-.find-id-password {
-  text-align: right;
 }
 .login-btn {
   font-weight: 600;
@@ -174,15 +126,6 @@ export default {
 #signInForm div {
   padding-top: 4px;
 }
-#signInForm span {
-  font-size: 12px;
-  color: #c699ff;
-}
-#signInForm span:hover {
-  cursor: pointer;
-  color: #8227fa;
-  text-decoration: underline;
-}
 .login-signup {
   font-size: 16px;
   color: #c699ff;
@@ -192,23 +135,5 @@ export default {
   cursor: pointer;
   color: #8227fa;
   text-decoration: underline;
-}
-.hr-sect {
-  display: flex;
-  flex-basis: 100%;
-  align-items: center;
-  color: rgba(0, 0, 0, 0.35);
-  font-size: 12px;
-  margin: 16px 0px;
-}
-.hr-sect::before,
-.hr-sect::after {
-  content: "";
-  flex-grow: 1;
-  background: rgba(0, 0, 0, 0.35);
-  height: 1px;
-  font-size: 0px;
-  line-height: 0px;
-  margin: 0px 16px;
 }
 </style>

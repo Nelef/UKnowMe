@@ -8,7 +8,7 @@
       <p class="member-info-p">닉네임:&#160;&#160;{{admin.member.nickname}}</p>
       <p class="member-info-p">성별:&#160;&#160;{{admin.member.gender}}</p>
       <p class="member-info-p">생년월일:&#160;&#160;{{admin.member.birth}}</p>
-      <p class="member-info-p">휴대폰 번호:&#160;&#160;{{admin.member.tel}}</p>
+      <p class="member-info-p">휴대폰 번호:&#160;&#160;{{ admin.member.tel || '-' }}</p>
       <p class="member-info-p">주소:&#160;&#160;{{admin.member.address}}</p>
       <p class="member-info-p">신고 누적 횟수:&#160;&#160;{{admin.member.accusedCount}}</p>
       <p class="member-info-p">가입일:&#160;&#160;{{admin.member.createDate.slice(0, 10)}}</p>

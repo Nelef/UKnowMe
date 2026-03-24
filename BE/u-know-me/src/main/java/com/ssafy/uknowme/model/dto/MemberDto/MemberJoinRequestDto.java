@@ -32,8 +32,8 @@ public class MemberJoinRequestDto {
     @Pattern(regexp = "^[0-9]{8}")
     private String birth;
 
-    @NotBlank(message = "전화번호는 필수 입력 값입니다.")
-    @Pattern(regexp = "^01([0|1|6|7|8|9]?)?([0-9]{3,4})?([0-9]{4})$")
+    @Pattern(regexp = "^$|^01([0|1|6|7|8|9]?)?([0-9]{3,4})?([0-9]{4})$",
+            message = "전화번호 형식이 올바르지 않습니다.")
     private String tel;
 
     @NotBlank(message = "흡연여부는 필수 입력 값입니다.")

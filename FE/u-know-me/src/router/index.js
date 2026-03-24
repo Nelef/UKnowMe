@@ -7,9 +7,7 @@ import LandPageView from '@/views/land/LandPageView.vue'
 import ChatView from '@/views/chat/ChatView.vue'
 import MainView from '@/views/main/MainView.vue'
 import AdminView from '@/views/admin/AdminView.vue'
-import TelCerticate from '@/views/land/TelCerticate.vue'
 import Test2View from '@/views/land/Test2View.vue'
-import OAuthRedirectView from '@/views/land/OAuthRedirectView.vue'
 
 import NotFound404 from '@/views/NotFound404.vue'
 
@@ -40,19 +38,9 @@ const routes = [
     component: AdminView,
   },
   {
-    path: "/tc",
-    name: 'tc',
-    component: TelCerticate,
-  },
-  {
     path: "/beta",
     name: 'beta',
     component: Test2View,
-  },
-  {
-    path: '/oauth2/redirect',
-    name: 'oauthRedirect',
-    component: OAuthRedirectView,
   },
   {
     path: '/404',
@@ -77,7 +65,7 @@ router.beforeEach(async(to, from, next) => {
     login: 0,
   }
 
-  const noAuthPages = ['home', 'NotFound404', 'tc', 'oauthRedirect']
+  const noAuthPages = ['home', 'NotFound404']
 
   const isAuthRequired = !noAuthPages.includes(to.name)
 

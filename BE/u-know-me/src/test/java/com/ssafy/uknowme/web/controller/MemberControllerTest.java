@@ -40,7 +40,7 @@ class MemberControllerTest {
 
     @Test
     @WithAnonymousUser
-    @DisplayName("[회원가입] 사용자는 회원 가입을 할 수 있어야 한다.")
+    @DisplayName("[회원가입] 사용자는 전화번호 없이도 회원 가입을 할 수 있어야 한다.")
     public void joinTest() throws Exception {
         // given
         MemberJoinRequestDto dto = new MemberJoinRequestDto();
@@ -51,7 +51,6 @@ class MemberControllerTest {
         dto.setNickname("명범짱");
         dto.setGender("M");
         dto.setBirth("19960513");
-        dto.setTel("01012345678");
         dto.setSmoke("Y");
         dto.setAddress("우리집");
 
@@ -152,12 +151,11 @@ class MemberControllerTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(username = "mungmnb777")
     @DisplayName("[비밀번호 변경] 사용자는 비밀번호를 변경할 수 있어야 한다.")
     public void changePasswordTest() throws Exception {
         // given
         ChangePasswordDto dto = new ChangePasswordDto();
-        dto.setId("mungmnb777");
         dto.setChangePassword("asd12345");
 
         // when
@@ -260,25 +258,5 @@ class MemberControllerTest {
         actions.andExpect(MockMvcResultMatchers.status().isOk());
         actions.andExpect(MockMvcResultMatchers.content().string("true"));
     }
-
-    @Test
-    @WithMockUser
-    @DisplayName("[아이디 찾기] 사용자는 본인 계정의 아이디를 찾을 수 있다.")
-    public void findIdTest() throws Exception {
-        // given
-        FindIdResponseDto dto = new FindIdResponseDto();
-        dto.setId("mungmnb777");
-        
-        Mockito.when(memberService.findId(any(FindIdRequestDto.class))).thenReturn(dto);
-
-        // when
-        ResultActions actions = mockMvc.perform(MockMvcRequestBuilders.get("/member/find/id?name=이명범&tel=01012345678")
-                .with(SecurityMockMvcRequestPostProcessors.csrf()));
-
-        // then
-        actions.andExpect(MockMvcResultMatchers.status().isOk());
-        actions.andExpect(MockMvcResultMatchers.content().json(convertToJson(dto)));
-    }
-
 
 }

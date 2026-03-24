@@ -12,10 +12,10 @@ import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 
 @Slf4j
@@ -31,11 +31,13 @@ public class MemberServiceImpl implements MemberService {
 
     @Override
     public boolean join(MemberJoinRequestDto dto) {
+        String normalizedTel = normalizeTel(dto.getTel());
+
         if (existsById(dto.getId())) {
             return false;
         } if (existsByNickname(dto.getNickname())) {
             return false;
-        } if (existsByTel(dto.getTel())) {
+        } if (StringUtils.hasText(normalizedTel) && existsByTel(normalizedTel)) {
             return false;
         }
 
@@ -52,7 +54,7 @@ public class MemberServiceImpl implements MemberService {
                 .nickname(dto.getNickname())
                 .gender(dto.getGender())
                 .birth(dto.getBirth())
-                .tel(dto.getTel())
+                .tel(normalizedTel)
                 .smoke(dto.getSmoke())
                 .address(dto.getAddress())
                 .role(Role.ROLE_USER)
@@ -61,6 +63,10 @@ public class MemberServiceImpl implements MemberService {
         repository.save(member);
 
         return true;
+    }
+
+    private String normalizeTel(String tel) {
+        return StringUtils.hasText(tel) ? tel : null;
     }
 
     private Avatar initAvatar(MemberJoinRequestDto dto) {
@@ -132,22 +138,6 @@ public class MemberServiceImpl implements MemberService {
     }
 
     @Override
-    public FindIdResponseDto findId(FindIdRequestDto requestDto) {
-
-        Optional<Member> optionalMember = repository.findByNameAndTel(requestDto.getName(), requestDto.getTel());
-
-        if (!optionalMember.isPresent()) return null;
-
-        Member member = optionalMember.get();
-
-        FindIdResponseDto responseDto = new FindIdResponseDto();
-
-        responseDto.setId(member.getId());
-
-        return responseDto;
-    }
-
-    @Override
     public List<ManageMemberInfoResponseDto> getMemberList() {
         return repository.findManageMemberInfoResponseDtoList(LocalDateTime.now().minusDays(7));
     }
@@ -167,8 +157,8 @@ public class MemberServiceImpl implements MemberService {
     }
 
     @Override
-    public void changePassword(ChangePasswordDto dto) {
-        Member member = repository.findById(dto.getId()).orElseThrow(IllegalStateException::new);
+    public void changePassword(ChangePasswordDto dto, String loginId) {
+        Member member = repository.findById(loginId).orElseThrow(IllegalStateException::new);
 
         PasswordEncoder encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
 

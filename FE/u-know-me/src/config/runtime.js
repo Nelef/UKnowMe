@@ -32,12 +32,3 @@ export const OPENVIDU_SERVER_SECRET =
 export const buildFrontendUrl = (path = '') => joinUrl(FRONTEND_BASE_URL, path)
 export const buildBackendUrl = (path = '') => joinUrl(BACKEND_BASE_URL, path)
 export const buildBackendWsUrl = (path = '') => joinUrl(BACKEND_WS_BASE_URL, path)
-
-export const buildOAuthAuthorizeUrl = provider => {
-  const callbackUrl = encodeURIComponent(
-    buildBackendUrl(`/member/oauth2/code/${provider}`)
-  )
-  return `${buildBackendUrl(
-    `/oauth2/authorization/${provider}`
-  )}?redirect_uri=${callbackUrl}`
-}

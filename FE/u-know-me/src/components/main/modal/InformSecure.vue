@@ -88,7 +88,6 @@ export default {
     const main = useMainStore();
     const account = useAccountStore();
     const password = ref({
-      id: account.currentUser.id,
       changePassword: '',
     })
     return {

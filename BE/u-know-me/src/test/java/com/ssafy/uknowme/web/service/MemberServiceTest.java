@@ -38,7 +38,7 @@ class MemberServiceTest {
     private AvatarRepository avatarRepository;
 
     @Test
-    @DisplayName("[회원가입] 사용자는 회원 가입을 할 수 있어야 한다.")
+    @DisplayName("[회원가입] 사용자는 전화번호 없이도 회원 가입을 할 수 있어야 한다.")
     public void join() throws Exception {
         // given
         MemberJoinRequestDto dto = new MemberJoinRequestDto();
@@ -49,7 +49,6 @@ class MemberServiceTest {
         dto.setNickname("명범짱");
         dto.setGender("M");
         dto.setBirth("19960513");
-        dto.setTel("01012345678");
         dto.setSmoke("Y");
         dto.setAddress("우리집");
 
@@ -194,26 +193,6 @@ class MemberServiceTest {
         // then
         assertThat(validated).isTrue();
         verify(memberRepository, times(1)).findById(id);
-    }
-
-    @Test
-    @DisplayName("[아이디 찾기] 사용자는 본인 계정의 아이디를 찾을 수 있다.")
-    public void findId() throws Exception {
-        // given
-        FindIdRequestDto dto = new FindIdRequestDto();
-        dto.setName("이명범");
-        dto.setTel("01012345678");
-
-        Member expectedMember = MockEntityFactory.createMember();
-
-        Mockito.when(memberRepository.findByNameAndTel("이명범", "01012345678")).thenReturn(Optional.of(expectedMember));
-
-        // when
-        FindIdResponseDto responseDto = memberService.findId(dto);
-
-        // then
-        assertThat(responseDto.getId()).isEqualTo("mungmnb777");
-        verify(memberRepository, times(1)).findByNameAndTel(dto.getName(), dto.getTel());
     }
 
     @Test

@@ -26,11 +26,10 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Date;
 
-import static com.ssafy.uknowme.security.oauth.repository.OAuth2AuthorizationRequestBasedOnCookieRepository.REFRESH_TOKEN;
-
 @Slf4j
 @RequiredArgsConstructor
 public class TokenAuthenticationFilter extends UsernamePasswordAuthenticationFilter {
+    private static final String REFRESH_TOKEN = "refresh_token";
 
     private final AuthTokenProvider authTokenProvider;
 

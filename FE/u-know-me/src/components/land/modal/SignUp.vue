@@ -91,23 +91,6 @@
       </div>
       <ErrorMessage class="error-message" name="signUpSmoking"/>
     </div>
-    <div>
-      <div><label for="signUpPhoneNumber">휴대전화</label></div>
-      <div>
-        <Field class="middle-input" type="text" name="signUpPhoneNumber" id="signUpPhoneNumber" placeholder="-없이 입력해주세요." v-model="credentials.tel" :rules="validateTel" />
-        <button @click="account.sendNumTel(credentials.tel)" type="button">전송하기</button>
-      </div>
-    </div>
-    <div>
-      <div><label for="signUpCertificationNumber">인증번호</label></div>
-      <div>
-        <Field type="text" :class="{ 'disabled-input-bg': !account.sendTel }" name="signUpCertificationNumber" id="signUpCertificationNumber"  placeholder="인증번호를 입력해주세요." v-model="telCerticate" :rules="validateTelCerticate" :disabled="!account.sendTel" />
-        <input @click="telClick()" type="text" id="tel-input" style="display:none;">
-      </div>
-      <div class="error-div"><ErrorMessage class="error-message" name="signUpPhoneNumber"/></div>
-      <div class="error-div" v-if="!account.checkSign.tel"><ErrorMessage class="error-message" name="signUpCertificationNumber"/></div>
-      <p v-if="account.checkSign.tel" class="correct-message">인증이 성공했습니다.</p>
-    </div>
     <button type="submit" class="sign-btn">가입하기</button>
   </Form>
   <div class="go-login">
@@ -143,9 +126,6 @@ export default {
   }
  },
  methods: {
-    telClick() {
-      this.telCerticate = document.getElementById('tel-input').value
-    },
     isRequired(value) {
       if (!value) {
         return '필수정보 입니다.';
@@ -244,27 +224,7 @@ export default {
       this.if_birth = 0
       return true;
     },
-    validateTel(value) {
-      if (!value) {
-        return '필수정보 입니다.';
-      }
-      const phoneJ = /^01([0|1|6|7|8|9]?)?([0-9]{3,4})?([0-9]{4})$/;
-      if (!phoneJ.test(value)) {
-        return '형식에 맞지 않는 번호입니다.';
-      }
-      return true;
-    },
-    validateTelCerticate(value) {
-      if (!value) {
-        return '인증이 필요합니다.';
-      }
-      this.account.certicateTel(value)
-      if (!this.account.checkSign.tel) {
-        return '인증번호를 다시 확인해주세요.'
-      }
-      return true
-    }
- },
+  },
  setup() {
   const account = useAccountStore()
   const land = useLandStore()
@@ -280,17 +240,14 @@ export default {
     nickname: '',
     gender: '',
     birth: '',
-    tel: '',
     smoke: '',
     address: '',
   })
-  const telCerticate = ref('')
   return {
     account,
     credentials,
     birth,
     land,
-    telCerticate,
   }
  }
 }

@@ -71,11 +71,11 @@ public class MemberController {
         }
     }
 
-    @ApiOperation(value="비밀번호 변경 API", notes="전화번호 인증 후 비밀번호를 변경할 때 사용하는 API입니다.")
+    @ApiOperation(value="비밀번호 변경 API", notes="로그인한 사용자가 비밀번호를 변경할 때 사용하는 API입니다.")
     @PutMapping("/password")
-    public ResponseEntity<?> changePassword(@RequestBody ChangePasswordDto dto) {
+    public ResponseEntity<?> changePassword(@RequestBody ChangePasswordDto dto, @AuthenticationId String loginId) {
         try {
-            memberService.changePassword(dto);
+            memberService.changePassword(dto, loginId);
             return new ResponseEntity<>("true", HttpStatus.OK);
         } catch (IllegalStateException e) {
             return new ResponseEntity<>("false", HttpStatus.OK);
@@ -124,18 +124,5 @@ public class MemberController {
         } else {
             return new ResponseEntity<>("false", HttpStatus.BAD_REQUEST);
         }
-    }
-
-    @ApiOperation(value="아이디 찾기 API", notes="사용자가 본인의 이름과 전화번호를 이용해 아이디를 찾을 수 있는 API입니다.")
-    @GetMapping("/find/id")
-    public ResponseEntity<?> findId(@ModelAttribute FindIdRequestDto requestDto) {
-        FindIdResponseDto responseDto = memberService.findId(requestDto);
-
-        if (responseDto == null) {
-            return new ResponseEntity<>(false, HttpStatus.OK);
-        } else {
-            return new ResponseEntity<>(responseDto, HttpStatus.OK);
-        }
-
     }
 }

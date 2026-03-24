@@ -22,13 +22,11 @@ public interface MemberService {
 
     boolean validatePassword(ValidatePasswordRequestDto dto, String loginId);
 
-    FindIdResponseDto findId(FindIdRequestDto dto);
-
     List<ManageMemberInfoResponseDto> getMemberList();
 
     ManageMemberInfoResponseDto getMemberBySeq(int seq);
 
     void changeAvatar(ChangeAvatarDto dto, String loginId);
 
-    void changePassword(ChangePasswordDto dto);
+    void changePassword(ChangePasswordDto dto, String loginId);
 }
