@@ -1,35 +1,30 @@
 <template>
-<div class="video-item" v-if="streamManager">
-	<ov-video :stream-manager="streamManager"/>
-	<div><p class="nickName">{{ clientData }}</p></div>
-</div>
+  <div class="video-item" v-if="participant">
+    <participant-media
+      :audio-track="participant.audioTrack"
+      :video-track="participant.videoTrack"
+    />
+    <div><p class="nickName">{{ displayName }}</p></div>
+  </div>
 </template>
 
 <script>
-import OvVideo from './OvVideo';
+import ParticipantMedia from './ParticipantMedia';
 
 export default {
 	name: 'UserVideo',
 
 	components: {
-		OvVideo,
+		ParticipantMedia,
 	},
 
 	props: {
-		streamManager: Object,
+		participant: Object,
 	},
 
 	computed: {
-		clientData () {
-			const { clientData } = this.getConnectionData();
-			return clientData;
-		},
-	},
-
-	methods: {
-		getConnectionData () {
-			const { connection } = this.streamManager.stream;
-			return JSON.parse(connection.data);
+		displayName () {
+			return this.participant.name || this.participant.identity;
 		},
 	},
 };

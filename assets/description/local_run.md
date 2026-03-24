@@ -77,7 +77,21 @@ ForEach-Object {
 
 로컬 실행 전 MariaDB가 필요합니다.
 
-아래 예시는 로컬 DB를 사용할 때의 환경 변수 예시입니다.
+채팅 기능까지 확인하려면 LiveKit 서버도 별도로 실행해야 합니다.
+
+가장 빠른 로컬 테스트는 공식 dev 모드입니다.
+
+```bash
+docker run --rm --name livekit-dev -p 7880:7880 -p 7881:7881 livekit/livekit-server:latest --dev
+```
+
+LiveKit 공식 dev 모드 기본 키는 아래와 같습니다.
+
+- `LIVEKIT_API_KEY=devkey`
+- `LIVEKIT_API_SECRET=secret`
+- `LIVEKIT_WS_URL=ws://127.0.0.1:7880`
+
+아래 예시는 로컬 DB + 로컬 LiveKit dev 서버를 사용할 때의 환경 변수 예시입니다.
 
 ```bash
 cd BE/u-know-me
@@ -87,8 +101,9 @@ export DB_PORT=3306
 export DB_NAME=uknowme
 export DB_USERNAME=uknowme
 export DB_PASSWORD=uknowme123!
-export OPENVIDU_URL=https://openvidu.imoneleft.synology.me
-export OPENVIDU_SECRET=uknowme123
+export LIVEKIT_WS_URL=ws://127.0.0.1:7880
+export LIVEKIT_API_KEY=devkey
+export LIVEKIT_API_SECRET=secret
 
 ./gradlew bootRun
 ```
@@ -103,8 +118,9 @@ $env:DB_PORT="3306"
 $env:DB_NAME="uknowme"
 $env:DB_USERNAME="uknowme"
 $env:DB_PASSWORD="uknowme123!"
-$env:OPENVIDU_URL="https://openvidu.imoneleft.synology.me"
-$env:OPENVIDU_SECRET="uknowme123"
+$env:LIVEKIT_WS_URL="ws://127.0.0.1:7880"
+$env:LIVEKIT_API_KEY="devkey"
+$env:LIVEKIT_API_SECRET="secret"
 
 .\gradlew.bat bootRun
 ```
@@ -124,7 +140,7 @@ npm run serve
 ## 참고
 
 - 소셜 로그인 콜백은 로컬 기준으로 백엔드 `http://localhost:8080/member/oauth2/code/{provider}` 를 사용합니다.
-- OpenVidu URL과 secret은 프론트가 아니라 백엔드 환경변수 `OPENVIDU_URL`, `OPENVIDU_SECRET` 로 관리합니다.
-- OpenVidu secret은 현재 DB 비밀번호 `uknowme123!` 에서 `!` 만 제거한 `uknowme123` 을 권장합니다.
-- OpenVidu를 별도 Docker 이미지로 올릴 때는 `./docker_build.md` 의 OpenVidu 섹션을 참고하면 됩니다.
+- LiveKit URL과 API 키는 프론트가 아니라 백엔드 환경변수 `LIVEKIT_WS_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` 로 관리합니다.
+- 로컬에서 `http://localhost:3000` 으로 접속해도 브라우저 secure context 제약 때문에 다른 기기 LAN HTTP 접속에서는 카메라/마이크 권한이 막힐 수 있습니다.
+- 공개 배포용 LiveKit 최소 포트 구성은 `./docker_build.md` 를 참고하면 됩니다.
 - Docker `tar` 배포용 프론트는 `3000` 포트에서 `npm start` 로 실행되며, 기본 API/웹소켓 주소는 `https://uknowme-back.imoneleft.synology.me` / `wss://uknowme-back.imoneleft.synology.me` 입니다.

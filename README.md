@@ -116,16 +116,13 @@ https://youtu.be/At3uHTK2e08?t=651
 - [Docker 이미지 빌드 및 tar 생성](./assets/description/docker_build.md)
 - [로컬 실행 방법](./assets/description/local_run.md)
 
-OpenVidu 실행 시 `DOMAIN_OR_PUBLIC_IP` 에는 브라우저가 실제로 접속할 주소를 넣어야 합니다.
+화상 채팅 미디어 서버는 현재 LiveKit 기준으로 정리되어 있습니다.
 
-- 같은 네트워크 내부 테스트: 서버의 내부 IP
-  - 예: `192.168.219.100`
-- 외부 배포: OpenVidu에 연결할 공인 도메인
-  - 예: `openvidu.imoneleft.synology.me`
+- 프론트/백엔드와 분리된 별도 서비스로 실행
+- 최소 공개 포트 구성: `443/tcp` + `7881/tcp`
+- 백엔드는 `LIVEKIT_WS_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` 로 LiveKit에 연결
 
-운영에서 `openvidu.imoneleft.synology.me:443` 으로만 공개하려면 OpenVidu를 `HTTPS_PORT=443` 으로 띄우고, reverse proxy 가 내부 `https://127.0.0.1:4443` 로 넘기도록 맞춰야 합니다.
-
-OpenVidu secret은 현재 DB 비밀번호 `uknowme123!` 에서 `!` 만 제거한 `uknowme123` 을 권장합니다.
+최소 포트 구성은 UDP를 열지 않는 타협안이어서, 연결 품질과 성공률은 정석 구성보다 떨어질 수 있습니다. 구체적인 실행 명령과 reverse proxy 구성은 [Docker 이미지 빌드 및 tar 생성](./assets/description/docker_build.md) 에 정리해두었습니다.
 
 <br>
 

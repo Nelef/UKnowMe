@@ -23,57 +23,123 @@ docker buildx build --platform linux/amd64 -t u-know-me-front --output type=dock
 
 별도의 DB 이미지를 따로 빌드하지 않고 `u-know-me-back` 이미지 하나만 생성하면 됩니다.
 
-OpenVidu는 백엔드 이미지 안에 넣지 않고, 별도 이미지로 운영하는 것을 권장합니다. 현재 프론트는 OpenVidu secret을 직접 들고 있지 않고, 백엔드가 `/session` API로 토큰을 발급하는 구조입니다.
+LiveKit은 백엔드 이미지 안에 넣지 않고, 별도 이미지로 운영하는 것을 권장합니다. 현재 프론트는 LiveKit secret을 직접 들고 있지 않고, 백엔드가 `/session` API로 LiveKit participant token을 발급하는 구조입니다.
 
 ```bash
 cd BE/u-know-me
 docker buildx build --platform linux/amd64 -t u-know-me-back --output type=docker,dest=u-know-me-back.tar .
 ```
 
-## OpenVidu
+## LiveKit
 
-OpenVidu는 공식 개발용 이미지 `openvidu/openvidu-dev` 를 별도 tar로 관리하는 편이 가장 단순합니다.
+### 권장 구조
 
-이 프로젝트는 `openvidu-browser` 와 `openvidu-java-client` 를 모두 `2.22.0` 으로 사용하고 있으므로, 서버 이미지도 같은 `2.22.0` 태그를 쓰는 것을 권장합니다. 이 버전 고정은 현재 코드 의존성에 맞춘 권장값입니다.
+이 프로젝트는 LiveKit을 프론트/백엔드와 분리된 별도 서비스로 둡니다.
+
+- 프론트: `u-know-me-front`
+- 백엔드: `u-know-me-back`
+- 미디어 서버: `livekit-server`
+
+공식 문서:
+
+- https://docs.livekit.io/transport/self-hosting/deployment/
+- https://docs.livekit.io/transport/self-hosting/ports-firewall/
+- https://docs.livekit.io/frontends/build/authentication/endpoint/
+
+### 최소 포트 구성
+
+이번 프로젝트의 최소 공개 포트 구성은 아래 기준입니다.
+
+- `443/tcp`: `https://livekit.imoneleft.synology.me` -> LiveKit `7880`
+- `7881/tcp`: ICE/TCP fallback 용으로 직접 개방
+
+이 구성은 UDP 없이 최대한 붙게 하는 최소 구성입니다. 품질과 연결 성공률은 UDP를 여는 정석 구성보다 떨어질 수 있습니다.
+
+중요한 점은 `443 reverse proxy` 만으로는 부족하다는 것입니다. LiveKit 공식 문서 기준 `7880` 은 API/WebSocket, `7881` 은 UDP가 막혔을 때 쓰는 ICE/TCP fallback 포트입니다. 따라서 `7881/tcp` 는 공유기/NAT/방화벽에서 직접 열어야 합니다.
+
+### LiveKit tar 생성
+
+운영에서는 검증한 버전 태그로 고정하는 편이 좋지만, 예시는 `latest` 를 사용합니다.
 
 ```bash
-docker pull --platform linux/amd64 openvidu/openvidu-dev:2.22.0
-docker save -o openvidu-dev-2.22.0.tar openvidu/openvidu-dev:2.22.0
+docker pull --platform linux/amd64 livekit/livekit-server:latest
+docker save -o livekit-server.tar livekit/livekit-server:latest
 ```
 
 대상 서버에서:
 
 ```bash
-docker load -i openvidu-dev-2.22.0.tar
-docker run -d --name openvidu \
-  -p 4443:443 \
-  -e DOMAIN_OR_PUBLIC_IP=openvidu.imoneleft.synology.me \
-  -e HTTPS_PORT=443 \
-  -e OPENVIDU_SECRET=uknowme123 \
-  openvidu/openvidu-dev:2.22.0
+docker load -i livekit-server.tar
 ```
 
-`DOMAIN_OR_PUBLIC_IP` 는 브라우저가 실제로 OpenVidu에 붙을 주소입니다.
+### LiveKit 설정 파일 예시
 
-- 같은 네트워크 내부 테스트: 서버 내부 IP
-  - 예: `192.168.219.100`
-- 외부 배포: 공인 도메인
-  - 예: `openvidu.imoneleft.synology.me`
+예를 들어 `/volume1/docker/livekit/livekit.yaml` 파일을 아래처럼 준비합니다.
 
-`443` 으로만 공개할 경우 OpenVidu 컨테이너는 `HTTPS_PORT=443` 으로 띄우고, Synology reverse proxy 는 `https://openvidu.imoneleft.synology.me` 요청을 내부 `https://127.0.0.1:4443` 로 넘기면 됩니다. 이때 WebSocket 업그레이드가 유지되어야 합니다.
+```yaml
+port: 7880
+rtc:
+  tcp_port: 7881
+  use_external_ip: true
+keys:
+  uknowme: uknowme123
+```
 
-`OPENVIDU_SECRET` 는 OpenVidu 제약상 영문, 숫자, `-`, `_` 만 사용하는 것이 안전합니다. 현재 권장 예시는 DB 비밀번호 `uknowme123!` 에서 `!` 를 제거한 `uknowme123` 입니다.
+이 설정은 최소 포트 기준 예시입니다.
 
-백엔드 tar 실행 시에는 OpenVidu 주소를 환경변수로 넘겨주는 것이 권장입니다.
+- `port: 7880`: reverse proxy가 붙는 HTTP/WebSocket 포트
+- `rtc.tcp_port: 7881`: UDP가 막힌 환경에서 쓰는 TCP fallback 포트
+- `keys`: 백엔드 `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` 와 동일해야 함
+
+### LiveKit 실행 예시
+
+```bash
+docker run -d --name livekit \
+  -p 7880:7880 \
+  -p 7881:7881 \
+  -v /volume1/docker/livekit/livekit.yaml:/etc/livekit.yaml \
+  livekit/livekit-server:latest \
+  --config /etc/livekit.yaml
+```
+
+Synology 기준 reverse proxy 는 아래처럼 맞추면 됩니다.
+
+- source: `https://livekit.imoneleft.synology.me:443`
+- destination: `http://127.0.0.1:7880`
+
+그리고 `7881/tcp` 는 reverse proxy가 아니라 방화벽/NAT에서 직접 열어야 합니다.
+
+### 백엔드 실행 예시
+
+백엔드는 LiveKit URL과 API 키를 환경변수로 받습니다.
 
 ```bash
 docker run -d --name u-know-me-back \
   -p 8888:8080 \
   -e DB_PASSWORD=uknowme123! \
-  -e OPENVIDU_URL=https://openvidu.imoneleft.synology.me \
-  -e OPENVIDU_SECRET=uknowme123 \
+  -e LIVEKIT_WS_URL=wss://livekit.imoneleft.synology.me \
+  -e LIVEKIT_API_KEY=uknowme \
+  -e LIVEKIT_API_SECRET=uknowme123 \
   u-know-me-back:latest
 ```
+
+Synology 기준 reverse proxy:
+
+- source: `https://uknowme-back.imoneleft.synology.me:443`
+- destination: `http://127.0.0.1:8888`
+
+### 프론트 실행 예시
+
+```bash
+docker run -d --name u-know-me-front -p 3000:3000 u-know-me-front:latest
+```
+
+Synology 기준 reverse proxy:
+
+- source: `https://uknowme.imoneleft.synology.me:443`
+- destination: `http://127.0.0.1:3000`
+
+프론트는 백엔드 REST/WebSocket을 `https://uknowme-back.imoneleft.synology.me` / `wss://uknowme-back.imoneleft.synology.me` 로 보고, 채팅 입장 시 백엔드가 내려준 `LIVEKIT_WS_URL` 로 LiveKit에 직접 붙습니다.
 
 ## 기존 방식
 
@@ -96,24 +162,10 @@ docker save -o u-know-me-back.tar u-know-me-back:latest
 ```bash
 docker load -i u-know-me-front.tar
 docker load -i u-know-me-back.tar
+docker load -i livekit-server.tar
 ```
-
-## tar 실행 예시
-
-프론트와 백엔드를 같은 서버에서 실행할 경우 아래처럼 포트를 매핑하면 됩니다.
-
-```bash
-docker run -d --name u-know-me-back -p 8888:8080 -e DB_PASSWORD=uknowme123! -e OPENVIDU_URL=https://openvidu.imoneleft.synology.me -e OPENVIDU_SECRET=uknowme123 u-know-me-back:latest
-docker run -d --name u-know-me-front -p 3000:3000 u-know-me-front:latest
-```
-
-프론트 tar 이미지는 현재 접속한 호스트의 `3000` 포트에서 서비스되고, 배포용 기본 API/웹소켓 주소는 `https://uknowme-back.imoneleft.synology.me` / `wss://uknowme-back.imoneleft.synology.me` 입니다.
-
-백엔드 tar 이미지를 함께 올리더라도, 프론트가 그 컨테이너를 직접 바라보게 하려면 프론트 production 환경변수를 다시 지정해서 빌드하거나 reverse proxy를 따로 구성해야 합니다.
 
 ## 참고
 
-- OpenVidu 공식 문서는 `openvidu/openvidu-dev` 를 개발/LAN 환경용으로 안내하고 있습니다. 운영 환경은 공식 on premises 설치 방식을 권장합니다.
-- 참고 문서:
-  - https://docs.openvidu.io/en/stable/deployment/ce/on-premises/
-  - https://docs.openvidu.io/en/stable/reference-docs/openvidu-config/
+- LiveKit 공식 문서 기준 `7880` 은 SSL 종료 가능한 reverse proxy/load balancer 뒤에 두는 포트이고, `7881` 은 UDP가 막혔을 때의 ICE/TCP fallback 포트입니다.
+- 최소 포트 구성은 `443/tcp + 7881/tcp` 기준의 타협안입니다. 더 안정적인 운영을 원하면 공식 문서의 UDP/TURN 설정까지 확장하는 편이 좋습니다.

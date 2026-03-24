@@ -10,6 +10,7 @@ import * as Camera from "@mediapipe/camera_utils";
 import { useMainStore } from '../main/main';
 import { useAccountStore } from '../land/account';
 import { buildBackendWsUrl, buildFrontendUrl } from '@/config/runtime'
+import { Track, createLocalVideoTrack } from 'livekit-client'
 
 import sr from '@/api/spring-rest'
 import axios from 'axios'
@@ -24,14 +25,12 @@ export const useChatStore = defineStore('chat', {
     loading: 1,
     loadingText: "로딩중",
     webSocket: null,
-    OV: undefined,
-    session: undefined,
-    sessionToken: '',
-    mainStreamManager: undefined,
-    publisher: undefined,
-    subscribers: [],
+    room: undefined,
+    participantToken: '',
+    roomServerUrl: '',
+    localVideoTrack: null,
+    localAudioTrack: null,
     camera: null,
-    videoDevices: null,
     SessionName: "SessionA",
     otherPeople: [],
     motionCheck: true,
@@ -435,18 +434,52 @@ export const useChatStore = defineStore('chat', {
       return avatarVideo;
     },
 
-    resetOpenViduState() {
-      this.sessionToken = '';
-      this.session = undefined;
-      this.mainStreamManager = undefined;
-      this.publisher = undefined;
-      this.subscribers = [];
-      this.OV = undefined;
-      this.videoDevices = null;
+    async switchPublishedVideoTrack(nextTrack, options = {}) {
+      if (!this.room) {
+        throw new Error('LiveKit room이 초기화되지 않았습니다.')
+      }
+
+      const {
+        stopPrevious = true,
+        trackName = 'camera',
+      } = options
+
+      const previousTrack = this.localVideoTrack
+
+      if (previousTrack && previousTrack !== nextTrack) {
+        try {
+          await this.room.localParticipant.unpublishTrack(previousTrack)
+        } catch (error) {
+          console.warn('기존 비디오 트랙 언퍼블리시 중 오류가 발생했습니다.', error)
+        }
+
+        if (stopPrevious && typeof previousTrack.stop === 'function') {
+          try {
+            previousTrack.stop()
+          } catch (error) {
+            console.warn('기존 비디오 트랙 정지 중 오류가 발생했습니다.', error)
+          }
+        }
+      }
+
+      const publication = await this.room.localParticipant.publishTrack(nextTrack, {
+        name: trackName,
+        source: Track.Source.Camera,
+      })
+
+      this.localVideoTrack = publication.track || nextTrack
+    },
+
+    resetLiveKitState() {
+      this.participantToken = '';
+      this.roomServerUrl = '';
+      this.room = undefined;
+      this.localVideoTrack = null;
+      this.localAudioTrack = null;
     },
 
     async leaveSession(options = {}) {
-      const { navigate = true, keepalive = false } = options;
+      const { navigate = true } = options;
 
       if (this.leavingSession) {
         if (navigate) {
@@ -457,15 +490,27 @@ export const useChatStore = defineStore('chat', {
 
       this.leavingSession = true;
 
-      const account = useAccountStore();
-      const roomSeq = this.SessionName ? String(this.SessionName) : '';
-      const token = this.sessionToken;
-
-      if (this.session) {
+      if (this.room) {
         try {
-          this.session.disconnect();
+          this.room.disconnect();
         } catch (error) {
-          console.warn('OpenVidu 세션 종료 중 오류가 발생했습니다.', error);
+          console.warn('LiveKit 룸 종료 중 오류가 발생했습니다.', error);
+        }
+      }
+
+      if (this.localVideoTrack && typeof this.localVideoTrack.stop === 'function') {
+        try {
+          this.localVideoTrack.stop();
+        } catch (error) {
+          console.warn('로컬 비디오 트랙 종료 중 오류가 발생했습니다.', error);
+        }
+      }
+
+      if (this.localAudioTrack && typeof this.localAudioTrack.stop === 'function') {
+        try {
+          this.localAudioTrack.stop();
+        } catch (error) {
+          console.warn('로컬 오디오 트랙 종료 중 오류가 발생했습니다.', error);
         }
       }
 
@@ -487,38 +532,7 @@ export const useChatStore = defineStore('chat', {
         this.camera = null;
       }
 
-      if (roomSeq && token) {
-        const payload = JSON.stringify({ roomSeq, token });
-
-        if (keepalive && typeof window !== 'undefined' && window.fetch) {
-          try {
-            window.fetch(sr.sessions.disconnectKeepalive(), {
-              method: 'POST',
-              keepalive: true,
-              headers: {
-                'Content-Type': 'application/json',
-                ...account.authHeader,
-              },
-              body: payload,
-            });
-          } catch (error) {
-            console.warn('keepalive 세션 정리 요청에 실패했습니다.', error);
-          }
-        } else {
-          try {
-            await axios({
-              url: sr.sessions.disconnect(),
-              method: 'delete',
-              data: { roomSeq, token },
-              headers: account.authHeader,
-            });
-          } catch (error) {
-            console.error(error.response || error);
-          }
-        }
-      }
-
-      this.resetOpenViduState();
+      this.resetLiveKitState();
       this.otherPeople = [];
       this.heartRainFlag = false;
       this.ready = false;
@@ -702,26 +716,14 @@ export const useChatStore = defineStore('chat', {
         height: 480,
       });
       this.camera.start();
-      // videoElement.style.display = "block";
-      // console.log("디바이스 카메라 리스트 : " + this.videoDevices);
 
-      let newPublisher = this.OV.initPublisher('html-element-id', {
-        videoSource: undefined, // The source of video. If undefined default webcam
-        publishAudio: true, // Whether you want to start publishing with your audio unmuted or not
-        publishVideo: true, // Whether you want to start publishing with your video enabled or not
-      });
-
-      this.session.unpublish(this.publisher).then(() => {
-        console.log('Old publisher unpublished!');
-
-        // Assigning the new publisher to our global variable 'publisher'
-        this.publisher = newPublisher;
-
-        // Publishing the new publisher
-        this.session.publish(this.publisher).then(() => {
-          console.log('New publisher published!');
+      createLocalVideoTrack()
+        .then(newTrack => this.switchPublishedVideoTrack(newTrack, {
+          trackName: 'real-camera',
+        }))
+        .catch(error => {
+          console.warn('실제 카메라 전환 중 오류가 발생했습니다.', error);
         });
-      });
     },
     keywordMessage() {
       const account = useAccountStore()

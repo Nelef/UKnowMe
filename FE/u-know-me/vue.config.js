@@ -32,6 +32,10 @@ module.exports = defineConfig({
         target: backendHttpTarget,
         changeOrigin: true,
       },
+      '/session': {
+        target: backendHttpTarget,
+        changeOrigin: true,
+      },
       '/report': {
         target: backendHttpTarget,
         changeOrigin: true,

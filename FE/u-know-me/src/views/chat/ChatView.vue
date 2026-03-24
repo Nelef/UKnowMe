@@ -45,10 +45,9 @@
           </div>
         </div>
         <user-video
-          v-for="sub in subscribers"
-          :key="sub.stream.connection.connectionId"
-          :stream-manager="sub"
-          @click="updateMainVideoStreamManager(sub)"
+          v-for="participant in remoteParticipants"
+          :key="participant.identity"
+          :participant="participant"
         />
       </div>
     </div>
@@ -62,7 +61,7 @@
 
 <script>
 import axios from "axios";
-import { OpenVidu } from "openvidu-browser";
+import { Room, RoomEvent, Track, createLocalAudioTrack } from "livekit-client";
 import UserVideo from "@/components/chat/UserVideo";
 import { useChatStore } from "@/stores/chat/chat";
 import { storeToRefs } from "pinia";
@@ -95,28 +94,12 @@ export default {
     const chat = useChatStore();
     const main = useMainStore();
 
-    let {
-      OV,
-      session,
-      sessionToken,
-      mainStreamManager,
-      publisher,
-      subscribers,
-      videoDevices,
-      SessionName,
-    } = storeToRefs(chat);
+    let { SessionName } = storeToRefs(chat);
 
     return {
       main,
       account,
       chat,
-      OV,
-      session,
-      sessionToken,
-      mainStreamManager,
-      publisher,
-      subscribers,
-      videoDevices,
       SessionName,
     };
   },
@@ -128,6 +111,7 @@ export default {
       timeIntervalId: null,
       keywordIntervalId: null,
       beforeUnloadHandler: null,
+      remoteParticipants: [],
     };
   },
   mounted() {
@@ -138,7 +122,7 @@ export default {
       this.chat.keywordMessage();
     }, 30000);
     this.beforeUnloadHandler = () => {
-      this.chat.leaveSession({ navigate: false, keepalive: true });
+      this.chat.leaveSession({ navigate: false });
     };
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
     this.joinSession();
@@ -171,99 +155,117 @@ export default {
       var avatarVideo = await this.chat.startHolistic();
       var interval = setInterval(() => {
         if (this.chat.ready) {
-          this.loadingText = "안정화 중..";
+          this.chat.loadingText = "안정화 중..";
           setTimeout(() => {
-            this.chat.loading = 0;
-            this.startOpenVidu(avatarVideo);
+            this.startLiveKit(avatarVideo);
           }, 3000);
           clearInterval(interval);
         }
       }, 1000);
     },
 
-    startOpenVidu(avatarVideo) {
-      console.log("5. OpenVidu 시작");
+    async startLiveKit(avatarVideo) {
+      console.log("5. LiveKit 시작");
 
-      // --- Get an OpenVidu object ---
-      this.OV = new OpenVidu();
+      try {
+        const connection = await this.createParticipantToken(this.mySessionId);
+        const room = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
 
-      // --- Init Video Device ---
-      this.OV.getDevices().then((devices) => {
-        this.videoDevices = devices.filter(
-          (device) => device.kind === "videoinput"
-        );
-      });
+        this.chat.room = room;
+        this.chat.roomServerUrl = connection.serverUrl;
+        this.chat.participantToken = connection.participantToken;
 
-      // --- Init a session ---
-      this.session = this.OV.initSession();
+        this.bindRoomEvents(room);
+        await room.connect(connection.serverUrl, connection.participantToken);
 
-      // --- Specify the actions when events take place in the session ---
+        const audioTrack = await createLocalAudioTrack();
+        const audioPublication = await room.localParticipant.publishTrack(audioTrack, {
+          source: Track.Source.Microphone,
+          name: "microphone",
+        });
+        this.chat.localAudioTrack = audioPublication.track || audioTrack;
 
-      // On every new Stream received...
-      this.session.on("streamCreated", ({ stream }) => {
-        const subscriber = this.session.subscribe(stream);
-        this.subscribers.push(subscriber);
-      });
+        await this.chat.switchPublishedVideoTrack(avatarVideo, {
+          stopPrevious: false,
+          trackName: "avatar-camera",
+        });
 
-      // On every Stream destroyed...
-      this.session.on("streamDestroyed", ({ stream }) => {
-        const index = this.subscribers.indexOf(stream.streamManager, 0);
-        if (index >= 0) {
-          this.subscribers.splice(index, 1);
-        }
-      });
-
-      // On every asynchronous exception...
-      this.session.on("exception", ({ exception }) => {
-        console.warn(exception);
-      });
-
-      // --- Connect to the session with a valid user token ---
-      this.getToken(this.mySessionId).then((token) => {
-        this.chat.sessionToken = token;
-        this.session
-          .connect(token, { clientData: this.myUserName })
-          .then(() => {
-            // --- Get your own camera stream with the desired properties ---
-            let publisher = this.OV.initPublisher(undefined, {
-              audioSource: undefined, // The source of audio. If undefined default microphone
-              videoSource: avatarVideo, // The source of video. If undefined default webcam
-              publishAudio: true, // Whether you want to start publishing with your audio unmuted or not
-              publishVideo: true, // Whether you want to start publishing with your video enabled or not
-              resolution: "640x480", // The resolution of your video
-              frameRate: 30, // The frame rate of your video
-              insertMode: "APPEND", // How the video is inserted in the target element 'video-container'
-              mirror: true, // Whether to mirror your local video or not
-            });
-
-            this.mainStreamManager = publisher;
-            this.publisher = publisher;
-
-            // --- Publish your stream ---
-
-            this.session.publish(this.publisher);
-          })
-          .catch((error) => {
-            console.log(
-              "There was an error connecting to the session:",
-              error.code,
-              error.message
-            );
-          });
-      });
-    },
-    updateMainVideoStreamManager(stream) {
-      if (this.mainStreamManager === stream) return;
-      this.mainStreamManager = stream;
+        this.syncRemoteParticipants();
+        this.chat.loading = 0;
+      } catch (error) {
+        console.error("LiveKit 연결 중 오류가 발생했습니다.", error);
+        this.chat.loading = 0;
+      }
     },
 
-    getToken(mySessionId) {
+    bindRoomEvents(room) {
+      const syncParticipants = () => this.syncRemoteParticipants();
+
+      room.on(RoomEvent.TrackSubscribed, syncParticipants);
+      room.on(RoomEvent.TrackUnsubscribed, syncParticipants);
+      room.on(RoomEvent.ParticipantConnected, syncParticipants);
+      room.on(RoomEvent.ParticipantDisconnected, syncParticipants);
+      room.on(RoomEvent.Disconnected, () => {
+        this.remoteParticipants = [];
+      });
+    },
+
+    syncRemoteParticipants() {
+      if (!this.chat.room) {
+        this.remoteParticipants = [];
+        return;
+      }
+
+      const participants = [];
+
+      this.chat.room.remoteParticipants.forEach((participant) => {
+        let videoTrack = null;
+        let audioTrack = null;
+
+        participant.trackPublications.forEach((publication) => {
+          if (!publication.isSubscribed || !publication.track) {
+            return;
+          }
+
+          if (publication.track.kind === Track.Kind.Video && !videoTrack) {
+            videoTrack = publication.track;
+          }
+
+          if (publication.track.kind === Track.Kind.Audio && !audioTrack) {
+            audioTrack = publication.track;
+          }
+        });
+
+        participants.push({
+          identity: participant.identity,
+          name: participant.name || participant.identity,
+          videoTrack,
+          audioTrack,
+        });
+      });
+
+      this.remoteParticipants = participants.filter(
+        participant => participant.videoTrack || participant.audioTrack
+      );
+    },
+
+    createParticipantToken(mySessionId) {
       return axios({
         url: sr.sessions.connect(),
         method: "post",
-        data: { roomSeq: String(mySessionId) },
+        data: {
+          roomSeq: String(mySessionId),
+          participantIdentity: String(this.account.currentUser.seq),
+          participantName: this.account.currentUser.nickname,
+          participantMetadata: JSON.stringify({
+            memberSeq: this.account.currentUser.seq,
+          }),
+        },
         headers: this.account.authHeader,
-      }).then((response) => response.data.token);
+      }).then((response) => response.data);
     },
   },
 };
