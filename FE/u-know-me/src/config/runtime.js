@@ -61,13 +61,6 @@ export const BACKEND_WS_BASE_URL = trimTrailingSlash(
   )
 )
 
-export const OPENVIDU_SERVER_URL = trimTrailingSlash(
-  process.env.VUE_APP_OPENVIDU_URL || 'https://openvidu.imoneleft.synology.me'
-)
-
-export const OPENVIDU_SERVER_SECRET =
-  process.env.VUE_APP_OPENVIDU_SECRET || 'MY_SECRET'
-
 export const buildFrontendUrl = (path = '') => joinUrl(FRONTEND_BASE_URL, path)
 export const buildBackendUrl = (path = '') => joinUrl(BACKEND_BASE_URL, path)
 export const buildBackendWsUrl = (path = '') => joinUrl(BACKEND_WS_BASE_URL, path)

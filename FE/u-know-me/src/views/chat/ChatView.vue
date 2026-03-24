@@ -75,10 +75,7 @@ import GameModal from "@/components/chat/GameModal.vue";
 import LoadingModal from "@/components/chat/LoadingModal.vue";
 import HeartRain from "@/components/chat/HeartRain.vue";
 import { useMainStore } from "@/stores/main/main";
-import {
-  OPENVIDU_SERVER_SECRET,
-  OPENVIDU_SERVER_URL,
-} from "@/config/runtime";
+import sr from "@/api/spring-rest";
 
 axios.defaults.headers.post["Content-Type"] = "application/json";
 
@@ -97,28 +94,17 @@ export default {
     const account = useAccountStore();
     const chat = useChatStore();
     const main = useMainStore();
-    account.fetchCurrentUser();
 
     let {
       OV,
       session,
+      sessionToken,
       mainStreamManager,
       publisher,
       subscribers,
       videoDevices,
       SessionName,
     } = storeToRefs(chat);
-    chat.socketConnect(account.currentUser.seq);
-
-    //1:1 2:2 UI 판별
-
-    main;
-    // if(main.option.matchingRoom == "1"){
-    // }
-
-    setInterval(() => {
-      chat.getTime();
-    }, 1000);
 
     return {
       main,
@@ -126,6 +112,7 @@ export default {
       chat,
       OV,
       session,
+      sessionToken,
       mainStreamManager,
       publisher,
       subscribers,
@@ -136,22 +123,50 @@ export default {
 
   data() {
     return {
-      mySessionId: this.SessionName,
-      myUserName: this.account.currentUser.nickname,
+      mySessionId: "",
+      myUserName: "",
+      timeIntervalId: null,
+      keywordIntervalId: null,
+      beforeUnloadHandler: null,
     };
   },
   mounted() {
+    this.timeIntervalId = window.setInterval(() => {
+      this.chat.getTime();
+    }, 1000);
+    this.keywordIntervalId = window.setInterval(() => {
+      this.chat.keywordMessage();
+    }, 30000);
+    this.beforeUnloadHandler = () => {
+      this.chat.leaveSession({ navigate: false, keepalive: true });
+    };
+    window.addEventListener("beforeunload", this.beforeUnloadHandler);
     this.joinSession();
     this.chat.systemMessagePrint(
       "상호간에 매너채팅은 필수! 좋은 만남 보내세요~"
     );
-    setInterval(() => {
-      this.chat.keywordMessage();
-    }, 30000);
+  },
+  beforeUnmount() {
+    if (this.timeIntervalId) {
+      window.clearInterval(this.timeIntervalId);
+    }
+    if (this.keywordIntervalId) {
+      window.clearInterval(this.keywordIntervalId);
+    }
+    if (this.beforeUnloadHandler) {
+      window.removeEventListener("beforeunload", this.beforeUnloadHandler);
+    }
+  },
+  beforeRouteLeave(to, from, next) {
+    this.chat.leaveSession({ navigate: false }).finally(() => next());
   },
   methods: {
     async joinSession() {
       await this.account.fetchCurrentUser();
+      this.chat.getTime();
+      this.mySessionId = String(this.SessionName || "SessionA");
+      this.myUserName = this.account.currentUser.nickname;
+      this.chat.socketConnect(this.account.currentUser.seq);
       await this.chat.avatarLoad(this.account.currentUser.avatar.seq);
       var avatarVideo = await this.chat.startHolistic();
       var interval = setInterval(() => {
@@ -168,7 +183,6 @@ export default {
 
     startOpenVidu(avatarVideo) {
       console.log("5. OpenVidu 시작");
-      const chat = useChatStore();
 
       // --- Get an OpenVidu object ---
       this.OV = new OpenVidu();
@@ -205,10 +219,8 @@ export default {
       });
 
       // --- Connect to the session with a valid user token ---
-
-      // 'getToken' method is simulating what your server-side should do.
-      // 'token' parameter should be retrieved and returned by your own backend
       this.getToken(this.mySessionId).then((token) => {
+        this.chat.sessionToken = token;
         this.session
           .connect(token, { clientData: this.myUserName })
           .then(() => {
@@ -239,88 +251,19 @@ export default {
             );
           });
       });
-
-      window.addEventListener("beforeunload", chat.leaveSession);
     },
     updateMainVideoStreamManager(stream) {
       if (this.mainStreamManager === stream) return;
       this.mainStreamManager = stream;
     },
 
-    /**
-     * --------------------------
-     * SERVER-SIDE RESPONSIBILITY
-     * --------------------------
-     * These methods retrieve the mandatory user token from OpenVidu Server.
-     * This behavior MUST BE IN YOUR SERVER-SIDE IN PRODUCTION (by using
-     * the API REST, openvidu-java-client or openvidu-node-client):
-     *   1) Initialize a Session in OpenVidu Server	(POST /openvidu/api/sessions)
-     *   2) Create a Connection in OpenVidu Server (POST /openvidu/api/sessions/<SESSION_ID>/connection)
-     *   3) The Connection.token must be consumed in Session.connect() method
-     */
-
     getToken(mySessionId) {
-      return this.createSession(mySessionId).then((sessionId) =>
-        this.createToken(sessionId)
-      );
-    },
-
-    // See https://docs.openvidu.io/en/stable/reference-docs/REST-API/#post-session
-    createSession(sessionId) {
-      return new Promise((resolve, reject) => {
-        axios
-          .post(
-            `${OPENVIDU_SERVER_URL}/openvidu/api/sessions`,
-            JSON.stringify({
-              customSessionId: sessionId,
-            }),
-            {
-              auth: {
-                username: "OPENVIDUAPP",
-                password: OPENVIDU_SERVER_SECRET,
-              },
-            }
-          )
-          .then((response) => response.data)
-          .then((data) => resolve(data.id))
-          .catch((error) => {
-            if (error.response.status === 409) {
-              resolve(sessionId);
-            } else {
-              console.warn(
-                `No connection to OpenVidu Server. This may be a certificate error at ${OPENVIDU_SERVER_URL}`
-              );
-              // if (
-              //   window.confirm(
-              //     `No connection to OpenVidu Server. This may be a certificate error at ${OPENVIDU_SERVER_URL}\n\nClick OK to navigate and accept it. If no certificate warning is shown, then check that your OpenVidu Server is up and running at "${OPENVIDU_SERVER_URL}"`
-              //   )
-              // ) {
-              //   location.assign(`${OPENVIDU_SERVER_URL}/accept-certificate`);
-              // }
-              reject(error.response);
-            }
-          });
-      });
-    },
-
-    // See https://docs.openvidu.io/en/stable/reference-docs/REST-API/#post-connection
-    createToken(sessionId) {
-      return new Promise((resolve, reject) => {
-        axios
-          .post(
-            `${OPENVIDU_SERVER_URL}/openvidu/api/sessions/${sessionId}/connection`,
-            {},
-            {
-              auth: {
-                username: "OPENVIDUAPP",
-                password: OPENVIDU_SERVER_SECRET,
-              },
-            }
-          )
-          .then((response) => response.data)
-          .then((data) => resolve(data.token))
-          .catch((error) => reject(error.response));
-      });
+      return axios({
+        url: sr.sessions.connect(),
+        method: "post",
+        data: { roomSeq: String(mySessionId) },
+        headers: this.account.authHeader,
+      }).then((response) => response.data.token);
     },
   },
 };

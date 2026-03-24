@@ -7,7 +7,7 @@ import lombok.Setter;
 @Setter
 public class ConnectionRequestDto {
 
-    private int roomSeq;
+    private String roomSeq;
 
     private String token;
 }

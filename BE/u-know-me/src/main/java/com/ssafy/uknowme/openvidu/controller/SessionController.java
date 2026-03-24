@@ -24,12 +24,12 @@ public class SessionController {
     /**
      * 생성된 세션들은 여기에서 관리됩니다.
      */
-    private final Map<Integer, Session> sessions = new ConcurrentHashMap<>();
+    private final Map<String, Session> sessions = new ConcurrentHashMap<>();
 
     /**
      * 세션에 연결된 연결들의 토큰 정보가 여기에서 관리됩니다.
      */
-    private final Map<Integer, Map<String, OpenViduRole>> tokens = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, OpenViduRole>> tokens = new ConcurrentHashMap<>();
 
     private final String OPENVIDU_URL;
 
@@ -45,7 +45,11 @@ public class SessionController {
     @PostMapping("/session")
     public ResponseEntity<?> connect(@RequestBody ConnectionRequestDto dto) {
 
-        int roomSeq = dto.getRoomSeq();
+        String roomSeq = normalizeRoomSeq(dto.getRoomSeq());
+
+        if (roomSeq == null) {
+            return new ResponseEntity<>("roomSeq는 비어 있을 수 없습니다.", HttpStatus.BAD_REQUEST);
+        }
 
         // 커넥션 프로퍼티, 현재 연결될 사용자의 프로퍼티를 설정한다.
         ConnectionProperties connectionProperties = new ConnectionProperties.Builder()
@@ -56,14 +60,12 @@ public class SessionController {
 
         Session session = getSession(roomSeq);
 
-        sessions.put(roomSeq, session);
-
         // 사용자가 사용할 토큰을 생성한다.
         String token = getToken(connectionProperties, session);
 
         // tokens에서 현재 생성한 토큰을 서버에서 관리한다.
-        if (!tokens.containsKey(roomSeq)) tokens.put(roomSeq, new ConcurrentHashMap<>());
-        tokens.get(roomSeq).put(token, connectionProperties.getRole());
+        tokens.computeIfAbsent(roomSeq, key -> new ConcurrentHashMap<>())
+                .put(token, connectionProperties.getRole());
 
         //해당 세션의 방 정보와 멤버 정보를 API로 넘겨줄 예정
         return new ResponseEntity<>(new ConnectionResponseDto(token, null, null), HttpStatus.OK);
@@ -71,8 +73,21 @@ public class SessionController {
 
     @DeleteMapping("/session")
     public ResponseEntity<?> disconnect(@RequestBody ConnectionRequestDto dto) {
-        int roomSeq = dto.getRoomSeq();
+        return disconnectSession(dto);
+    }
+
+    @PostMapping("/session/disconnect")
+    public ResponseEntity<?> disconnectKeepalive(@RequestBody ConnectionRequestDto dto) {
+        return disconnectSession(dto);
+    }
+
+    private ResponseEntity<?> disconnectSession(ConnectionRequestDto dto) {
+        String roomSeq = normalizeRoomSeq(dto.getRoomSeq());
         String token = dto.getToken();
+
+        if (roomSeq == null || token == null || token.trim().isEmpty()) {
+            return new ResponseEntity<>("roomSeq와 token은 비어 있을 수 없습니다.", HttpStatus.BAD_REQUEST);
+        }
 
         if (sessions.get(roomSeq) == null) {
             log.info("[Room {}] 해당 방의 세션은 존재하지 않습니다.", roomSeq);
@@ -96,6 +111,7 @@ public class SessionController {
 
             // WAS에서도 해당 세션의 상태를 메모리에서 제거한다.
             log.info("[Room {} - {}] 세션 종료", roomSeq, sessions.remove(roomSeq).getSessionId());
+            tokens.remove(roomSeq);
         }
 
         return new ResponseEntity<>(HttpStatus.OK);
@@ -120,23 +136,8 @@ public class SessionController {
      * @param seq 생성된 방의 식별자
      * @return 연결될 세션
      */
-    private Session getSession(int seq) {
-        // 해당 seq의 세션이 없을 경우 세션을 생성한다.
-        if (sessions.get(seq) == null) {
-            try {
-                return openVidu.createSession();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-        // 해당 seq의 세션이 있을 경우 그 세션을 사용한다.
-        else {
-            try {
-                return sessions.get(seq);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
+    private Session getSession(String seq) {
+        return sessions.computeIfAbsent(seq, this::createSession);
     }
 
     private void closeSession(Session session) {
@@ -145,5 +146,25 @@ public class SessionController {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private Session createSession(String sessionKey) {
+        try {
+            SessionProperties properties = new SessionProperties.Builder()
+                    .customSessionId(sessionKey)
+                    .build();
+            return openVidu.createSession(properties);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private String normalizeRoomSeq(String roomSeq) {
+        if (roomSeq == null) {
+            return null;
+        }
+
+        String normalized = roomSeq.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 }

@@ -164,7 +164,7 @@
               <div>모션 인식</div>
             </button>
             <button
-              @click="chat.leaveSession(), $router.replace({ name: 'main' })"
+              @click="chat.leaveSession()"
               class="chat-btn-lg-mobile"
             >
               <img src="@/assets/chat/exit-img.png" alt="" />

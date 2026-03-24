@@ -8,6 +8,7 @@ const FEATURES = 'feature/'
 const ROOMS = 'room/'
 const AVATARS = 'avatar/'
 const NOTICES = 'notice/'
+const SESSIONS = 'session'
 
 
 export default {
@@ -57,5 +58,10 @@ export default {
     notices: () => HOST + NOTICES + 'list',
     notice: noticeSeq => HOST + NOTICES + `${noticeSeq}`,
     save: () => HOST + NOTICES + 'create',
+  },
+  sessions: {
+    connect: () => HOST + SESSIONS,
+    disconnect: () => HOST + SESSIONS,
+    disconnectKeepalive: () => HOST + SESSIONS + '/disconnect',
   }
 }

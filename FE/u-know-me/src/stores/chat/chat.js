@@ -26,6 +26,7 @@ export const useChatStore = defineStore('chat', {
     webSocket: null,
     OV: undefined,
     session: undefined,
+    sessionToken: '',
     mainStreamManager: undefined,
     publisher: undefined,
     subscribers: [],
@@ -41,6 +42,7 @@ export const useChatStore = defineStore('chat', {
     gameA2 : "답2",
     ready: false,
     heartRainFlag: false,
+    leavingSession: false,
   }),
   getters: {
 
@@ -433,23 +435,99 @@ export const useChatStore = defineStore('chat', {
       return avatarVideo;
     },
 
-    leaveSession() {
-      // document.getElementById("avatarCanvas" + useMainStore().option.matchingRoom).remove();
-      // // --- Leave the session by calling 'disconnect' method over the Session object ---
-      // if (this.session) this.session.disconnect();
+    resetOpenViduState() {
+      this.sessionToken = '';
+      this.session = undefined;
+      this.mainStreamManager = undefined;
+      this.publisher = undefined;
+      this.subscribers = [];
+      this.OV = undefined;
+      this.videoDevices = null;
+    },
 
-      // this.session = undefined;
-      // this.mainStreamManager = undefined;
-      // this.publisher = undefined;
-      // this.subscribers = [];
-      // this.OV = undefined;
+    async leaveSession(options = {}) {
+      const { navigate = true, keepalive = false } = options;
 
-      // window.removeEventListener("beforeunload", this.leaveSession);
+      if (this.leavingSession) {
+        if (navigate) {
+          window.location.href = buildFrontendUrl('/main');
+        }
+        return;
+      }
 
-      // if (this.camera) {
-      //   this.camera.stop();
-      // }
-      window.location.href = buildFrontendUrl('/main');
+      this.leavingSession = true;
+
+      const account = useAccountStore();
+      const roomSeq = this.SessionName ? String(this.SessionName) : '';
+      const token = this.sessionToken;
+
+      if (this.session) {
+        try {
+          this.session.disconnect();
+        } catch (error) {
+          console.warn('OpenVidu 세션 종료 중 오류가 발생했습니다.', error);
+        }
+      }
+
+      if (this.webSocket) {
+        try {
+          this.webSocket.close();
+        } catch (error) {
+          console.warn('채팅 웹소켓 종료 중 오류가 발생했습니다.', error);
+        }
+        this.webSocket = null;
+      }
+
+      if (this.camera) {
+        try {
+          this.camera.stop();
+        } catch (error) {
+          console.warn('카메라 종료 중 오류가 발생했습니다.', error);
+        }
+        this.camera = null;
+      }
+
+      if (roomSeq && token) {
+        const payload = JSON.stringify({ roomSeq, token });
+
+        if (keepalive && typeof window !== 'undefined' && window.fetch) {
+          try {
+            window.fetch(sr.sessions.disconnectKeepalive(), {
+              method: 'POST',
+              keepalive: true,
+              headers: {
+                'Content-Type': 'application/json',
+                ...account.authHeader,
+              },
+              body: payload,
+            });
+          } catch (error) {
+            console.warn('keepalive 세션 정리 요청에 실패했습니다.', error);
+          }
+        } else {
+          try {
+            await axios({
+              url: sr.sessions.disconnect(),
+              method: 'delete',
+              data: { roomSeq, token },
+              headers: account.authHeader,
+            });
+          } catch (error) {
+            console.error(error.response || error);
+          }
+        }
+      }
+
+      this.resetOpenViduState();
+      this.otherPeople = [];
+      this.heartRainFlag = false;
+      this.ready = false;
+      this.mobile = false;
+      this.leavingSession = false;
+
+      if (navigate) {
+        window.location.href = buildFrontendUrl('/main');
+      }
     },
 
     socketConnect(seq) {
@@ -457,6 +535,14 @@ export const useChatStore = defineStore('chat', {
       //socket test
       console.log("socket test");
       // 1. 웹소켓 클라이언트 객체 생성
+      if (this.webSocket) {
+        try {
+          this.webSocket.close();
+        } catch (error) {
+          console.warn('기존 채팅 웹소켓 종료 중 오류가 발생했습니다.', error);
+        }
+      }
+
       const webSocket = new WebSocket(buildBackendWsUrl('/ws/chat'));
 
       this.webSocket = webSocket;
@@ -502,6 +588,7 @@ export const useChatStore = defineStore('chat', {
 
       // 2-3) 연결 종료 이벤트 처리
       webSocket.onclose = function () {
+        self.webSocket = null;
         console.log("서버 웹소켓 연결 종료");
       };
 

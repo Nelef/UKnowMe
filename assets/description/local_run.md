@@ -87,6 +87,8 @@ export DB_PORT=3306
 export DB_NAME=uknowme
 export DB_USERNAME=uknowme
 export DB_PASSWORD=uknowme123!
+export OPENVIDU_URL=https://openvidu.imoneleft.synology.me
+export OPENVIDU_SECRET=uknowme123
 
 ./gradlew bootRun
 ```
@@ -101,6 +103,8 @@ $env:DB_PORT="3306"
 $env:DB_NAME="uknowme"
 $env:DB_USERNAME="uknowme"
 $env:DB_PASSWORD="uknowme123!"
+$env:OPENVIDU_URL="https://openvidu.imoneleft.synology.me"
+$env:OPENVIDU_SECRET="uknowme123"
 
 .\gradlew.bat bootRun
 ```
@@ -120,5 +124,7 @@ npm run serve
 ## 참고
 
 - 소셜 로그인 콜백은 로컬 기준으로 백엔드 `http://localhost:8080/member/oauth2/code/{provider}` 를 사용합니다.
-- OpenVidu는 현재 외부 서버 `https://openvidu.imoneleft.synology.me` 를 사용하도록 되어 있습니다.
+- OpenVidu URL과 secret은 프론트가 아니라 백엔드 환경변수 `OPENVIDU_URL`, `OPENVIDU_SECRET` 로 관리합니다.
+- OpenVidu secret은 현재 DB 비밀번호 `uknowme123!` 에서 `!` 만 제거한 `uknowme123` 을 권장합니다.
+- OpenVidu를 별도 Docker 이미지로 올릴 때는 `./docker_build.md` 의 OpenVidu 섹션을 참고하면 됩니다.
 - Docker `tar` 배포용 프론트는 `3000` 포트에서 `npm start` 로 실행되며, 기본 API/웹소켓 주소는 `https://uknowme-back.imoneleft.synology.me` / `wss://uknowme-back.imoneleft.synology.me` 입니다.
