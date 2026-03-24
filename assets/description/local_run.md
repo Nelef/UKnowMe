@@ -121,4 +121,4 @@ npm run serve
 
 - 소셜 로그인 콜백은 로컬 기준으로 백엔드 `http://localhost:8080/member/oauth2/code/{provider}` 를 사용합니다.
 - OpenVidu는 현재 외부 서버 `https://openvidu.imoneleft.synology.me` 를 사용하도록 되어 있습니다.
-- Docker `tar` 배포용 빌드는 `.env.production` 과 백엔드 `docker` 프로필을 사용하므로 로컬 실행과 분리되어 있습니다.
+- Docker `tar` 배포용 프론트는 `3000` 포트에서 `npm start` 로 실행되며, 기본 API/웹소켓 주소는 `https://uknowme-back.imoneleft.synology.me` / `wss://uknowme-back.imoneleft.synology.me` 입니다.
