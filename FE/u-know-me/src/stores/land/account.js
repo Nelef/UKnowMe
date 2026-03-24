@@ -5,6 +5,7 @@ import axios from 'axios'
 import { useLandStore } from './land'
 import { useMainStore } from '../main/main'
 import { useCookies } from "vue3-cookies";
+import { buildFrontendUrl, buildOAuthAuthorizeUrl } from '@/config/runtime'
 
 const { cookies } = useCookies();
 
@@ -117,8 +118,8 @@ export const useAccountStore = defineStore('account', {
       const land = useLandStore()
       const access_token = cookies.get('access_token')
       const refresh_token = cookies.get('refresh_token')
-      this.saveToken(access_token, refresh_token)
-      if (access_token) {
+      if (access_token && refresh_token) {
+        this.saveToken(access_token, refresh_token)
         router.push({ name: 'main' })
         cookies.remove('access_token')
         cookies.remove('refresh_token')
@@ -127,14 +128,46 @@ export const useAccountStore = defineStore('account', {
         land.btnCh = 2
       }
     },
+    async handleSocialLoginRedirect() {
+      const access_token = cookies.get('access_token')
+      const refresh_token = cookies.get('refresh_token')
+
+      if (!access_token || !refresh_token) {
+        alert('회원가입을 먼저 해주세요.')
+
+        if (window.opener && !window.opener.closed) {
+          window.opener.focus()
+          window.close()
+          return
+        }
+
+        router.replace({ name: 'home' })
+        return
+      }
+
+      this.saveToken(access_token, refresh_token)
+      cookies.remove('access_token')
+      cookies.remove('refresh_token')
+
+      await this.fetchCurrentUser()
+
+      const targetPath =
+        this.currentUser.role === 'ROLE_MANAGER' ? '/admin' : '/main'
+
+      if (window.opener && !window.opener.closed) {
+        window.opener.location.href = buildFrontendUrl(targetPath)
+        window.close()
+        return
+      }
+
+      router.replace({ path: targetPath })
+    },
     naverLogin() {
-      // const REIDRECT_URL = 'https://uknowme.mooo.com:8443/oauth2/authorization/naver?redirect_uri=https://uknowme.mooo.com:8443/member/oauth2/code/naver'
-      const REIDRECT_URL = 'https://uknowme-back.imoneleft.synology.me/oauth2/authorization/naver?redirect_uri=https://uknowme-back.imoneleft.synology.me/member/oauth2/code/naver'
+      const REIDRECT_URL = buildOAuthAuthorizeUrl('naver')
       window.open(REIDRECT_URL, '네이버로그인', this.getTelPopupFeatures());
     },
     kakaoLogin() {
-      // const REIDRECT_URL = 'https://uknowme.mooo.com:8443/oauth2/authorization/kakao?redirect_uri=https://uknowme.mooo.com:8443/member/oauth2/code/kakao'
-      const REIDRECT_URL = 'https://uknowme-back.imoneleft.synology.me/oauth2/authorization/kakao?redirect_uri=https://uknowme-back.imoneleft.synology.me/member/oauth2/code/kakao'
+      const REIDRECT_URL = buildOAuthAuthorizeUrl('kakao')
       window.open(REIDRECT_URL, '카카오로그인', this.getTelPopupFeatures());
     },
     getTelPopupFeatures() {

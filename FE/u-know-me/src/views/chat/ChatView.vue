@@ -75,13 +75,12 @@ import GameModal from "@/components/chat/GameModal.vue";
 import LoadingModal from "@/components/chat/LoadingModal.vue";
 import HeartRain from "@/components/chat/HeartRain.vue";
 import { useMainStore } from "@/stores/main/main";
+import {
+  OPENVIDU_SERVER_SECRET,
+  OPENVIDU_SERVER_URL,
+} from "@/config/runtime";
 
 axios.defaults.headers.post["Content-Type"] = "application/json";
-
-// const OPENVIDU_SERVER_URL = "hFttps://" + location.hostname + ":4443";
-// const OPENVIDU_SERVER_URL = "https://uknowme.mooo.com:4443";
-const OPENVIDU_SERVER_URL = "https://openvidu.imoneleft.synology.me";
-const OPENVIDU_SERVER_SECRET = "MY_SECRET";
 
 export default {
   name: "App",

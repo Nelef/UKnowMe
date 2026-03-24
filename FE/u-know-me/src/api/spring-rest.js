@@ -1,5 +1,6 @@
-// const HOST = 'https://uknowme.mooo.com:8443/'
-const HOST = 'https://uknowme-back.imoneleft.synology.me/'
+import { BACKEND_BASE_URL } from '@/config/runtime'
+
+const HOST = `${BACKEND_BASE_URL}/`
 
 const MEMBERS = 'member/'
 const MACHINGS = 'maching/'

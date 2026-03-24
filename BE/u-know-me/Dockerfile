@@ -15,7 +15,7 @@ RUN ./gradlew --no-daemon clean build
 FROM eclipse-temurin:8-jre-alpine
 ENV ARTIFACT_NAME=u-know-me-0.0.1-SNAPSHOT.jar \
     APP_HOME=/usr/app \
-    SPRING_PROFILES_ACTIVE=local \
+    SPRING_PROFILES_ACTIVE=docker \
     DB_HOST=127.0.0.1 \
     DB_BIND_ADDRESS=127.0.0.1 \
     DB_PORT=3306 \

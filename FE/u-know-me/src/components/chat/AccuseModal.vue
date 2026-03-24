@@ -29,6 +29,7 @@ import { storeToRefs } from "pinia"
 import { useChatStore } from "@/stores/chat/chat"
 import { useAccountStore } from '@/stores/land/account'
 import axios from 'axios'
+import { buildBackendUrl } from '@/config/runtime'
 
 
 export default {
@@ -51,8 +52,7 @@ export default {
     createReport(reportingMemberSeq, accusedMemberSeq) {
       const account = useAccountStore()
       axios({
-        // url: `https://uknowme.mooo.com:8443/report/create`,
-        url: `https://uknowme-back.imoneleft.synology.me/report/create`,
+        url: buildBackendUrl('/report/create'),
         method: 'post',
         data: {
           "accusedMemberSeq": accusedMemberSeq,

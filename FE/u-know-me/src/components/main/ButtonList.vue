@@ -56,6 +56,7 @@ import { useChatStore } from "@/stores/chat/chat";
 import router from "@/router";
 import { storeToRefs } from "pinia";
 import wait from "waait";
+import { buildBackendWsUrl } from "@/config/runtime";
 
 export default {
   name: "ButtonList",
@@ -91,9 +92,7 @@ export default {
 
         console.log("socket start");
         // 1. 웹소켓 클라이언트 객체 생성
-        self.webSocket = new WebSocket(
-          "wss://uknowme-back.imoneleft.synology.me/ws/matching"
-        );
+        self.webSocket = new WebSocket(buildBackendWsUrl("/ws/matching"));
 
         // 2. 웹소켓 이벤트 처리
         // 2-1) 연결 이벤트 처리

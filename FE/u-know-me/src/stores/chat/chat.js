@@ -9,6 +9,7 @@ import * as DrawConnectors from "@mediapipe/drawing_utils";
 import * as Camera from "@mediapipe/camera_utils";
 import { useMainStore } from '../main/main';
 import { useAccountStore } from '../land/account';
+import { buildBackendWsUrl, buildFrontendUrl } from '@/config/runtime'
 
 import sr from '@/api/spring-rest'
 import axios from 'axios'
@@ -448,8 +449,7 @@ export const useChatStore = defineStore('chat', {
       // if (this.camera) {
       //   this.camera.stop();
       // }
-      // window.location.href = "https://uknowme.mooo.com/main";
-      window.location.href = "https://uknowme-back.imoneleft.synology.me/main";
+      window.location.href = buildFrontendUrl('/main');
     },
 
     socketConnect(seq) {
@@ -457,7 +457,7 @@ export const useChatStore = defineStore('chat', {
       //socket test
       console.log("socket test");
       // 1. 웹소켓 클라이언트 객체 생성
-      const webSocket = new WebSocket("wss://uknowme-back.imoneleft.synology.me/ws/chat");
+      const webSocket = new WebSocket(buildBackendWsUrl('/ws/chat'));
 
       this.webSocket = webSocket;
 

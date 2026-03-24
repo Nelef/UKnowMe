@@ -3,7 +3,7 @@
     <div id="g_id_onload"
       data-client_id="126204385632-ibuafqcdp8og2o1qevlhrrcs6u7vvut1.apps.googleusercontent.com"
       data-context="signin"
-      data-login_uri="https://uknowme-back.imoneleft.synology.me"
+      :data-login_uri="googleLoginUri"
       data-auto_select="true"
       data-auto_prompt="false">
     </div>
@@ -19,8 +19,14 @@
 </template>
 
 <script>
-export default {
+import { BACKEND_BASE_URL } from '@/config/runtime'
 
+export default {
+  setup() {
+    return {
+      googleLoginUri: BACKEND_BASE_URL,
+    }
+  }
 }
 </script>
 
