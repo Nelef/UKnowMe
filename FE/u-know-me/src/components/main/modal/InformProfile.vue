@@ -256,8 +256,9 @@ export default {
 #informModifyForm button:active {
   background: #8122fe;
 }
-.error-message {
-  font-size: 4px;
+#informModifyForm .error-message {
+  font-size: 12px;
+  line-height: 18px;
   color: red
 }
 #informModifyForm .disabled-input-bg {

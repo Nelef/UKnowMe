@@ -1,100 +1,102 @@
 <template>
-  <div class="sign-head">
-    계정 만들기
-  </div>
-  <Form id="signUpForm" action="POST" @submit="account.signup(credentials, birth)">
-    <div>
-      <div><label for="signUpId">아이디</label></div>
+  <div class="signup-shell">
+    <div class="sign-head">
+      계정 만들기
+    </div>
+    <Form id="signUpForm" action="POST" @submit="account.signup(credentials, birth)">
       <div>
-        <Field type="text" name="signUpId" id="signUpId" placeholder="아이디를 입력해 주세요." v-model="credentials.id" :rules="validateId" />
+        <div><label for="signUpId">아이디</label></div>
+        <div>
+          <Field type="text" name="signUpId" id="signUpId" placeholder="아이디를 입력해 주세요." v-model="credentials.id" :rules="validateId" />
+        </div>
+        <ErrorMessage v-if="!account.checkSign.id" class="error-message" name="signUpId"/>
+        <p v-if="account.checkSign.id" class="correct-message">사용 가능한 아이디 입니다.</p>
       </div>
-      <ErrorMessage v-if="!account.checkSign.id" class="error-message" name="signUpId"/>
-      <p v-if="account.checkSign.id" class="correct-message">사용 가능한 아이디 입니다.</p>
-    </div>
-    <div>
-      <div><label for="signUpPassword">비밀번호</label></div>
-      <div><Field type="password" name="signUpPassword" id="signUpPassword" placeholder="8~16자의 영문, 숫자, 특수문자를 모두 조합해 입력해주세요." v-model="credentials.password" :rules="validatePassword" /></div>
-      <ErrorMessage class="error-message" name="signUpPassword"/>
-    </div>
-    <div>
-      <div><label for="signUpPasswordConfirm">비밀번호 확인</label></div>
-      <div><Field type="password" name="signUpPasswordConfirm" id="signUpPasswordConfirm" placeholder="확인을 위하여 위와 동일하게 입력해주세요." :rules="validateRePassword" /></div>
-      <ErrorMessage class="error-message" name="signUpPasswordConfirm"/>
-    </div>
-    <div>
-      <div><label for="signUpName">이름</label></div>
-      <div><Field type="text" name="signUpName" id="signUpName" placeholder="한글/영문으로 입력해주세요." v-model="credentials.name" :rules="validatename" /></div>
-      <ErrorMessage class="error-message" name="signUpName"/>
-    </div>
-    <div>
-      <div><label for="signUpNickName">닉네임</label></div>
       <div>
-        <Field class="middle-input" type="text" name="signUpNickName" id="signUpNickName" placeholder="닉네임을 입력해주세요." v-model="credentials.nickname" :rules="validateNickname" />
-        <button :class="{ 'fix-btn': account.checkSign.nickName }" type="button" @click="account.duplicateNickname(credentials.nickname)">중복 확인</button>
+        <div><label for="signUpPassword">비밀번호</label></div>
+        <div><Field type="password" name="signUpPassword" id="signUpPassword" placeholder="8~16자의 영문, 숫자, 특수문자를 모두 조합해 입력해주세요." v-model="credentials.password" :rules="validatePassword" /></div>
+        <ErrorMessage class="error-message" name="signUpPassword"/>
       </div>
-      <ErrorMessage v-if="!account.checkSign.nickName" class="error-message" name="signUpNickName"/>
-      <p v-if="account.checkSign.nickName" class="correct-message">사용 가능한 닉네임 입니다.</p>
-    </div>
-    <div>
-      <div><label for="signUpYear">생년월일</label></div>
       <div>
-        <Field class="sort-input" type="text" name="signUpYear" id="signUpYear" placeholder="년(4자)" v-model="birth.year" :rules="validateBirthYear"/>
-        <Field class="sort-input" name="signUpMonth" id="signUpMonth" v-model="birth.month" as="select" :rules="validateBirthMonth">
-          <option
-             v-for="(month, idx) in months"
-            :key="idx"
-            :value="months_val[idx]"
-          >{{ month }}</option>
-        </Field>
-        <Field class="sort-input" type="text" name="signUpDay" id="signUpDay" placeholder="일" style="margin:0;" v-model="birth.day" :rules="validateBirthDay"/>
+        <div><label for="signUpPasswordConfirm">비밀번호 확인</label></div>
+        <div><Field type="password" name="signUpPasswordConfirm" id="signUpPasswordConfirm" placeholder="확인을 위하여 위와 동일하게 입력해주세요." :rules="validateRePassword" /></div>
+        <ErrorMessage class="error-message" name="signUpPasswordConfirm"/>
       </div>
-      <ErrorMessage v-if="if_birth===0" class="error-message" name="signUpYear"/>
-      <ErrorMessage v-if="if_birth===1"  class="error-message" name="signUpMonth"/>
-      <ErrorMessage v-if="if_birth===2"  class="error-message" name="signUpDay"/>
-    </div>
-    <div>
-      <div><label for="signUpGender">성별</label></div>
       <div>
-        <Field name="signUpGender" id="signUpGender" v-model="credentials.gender" as="select" :rules="isRequired">
-          <option
-            v-for="(gender, idx) in genders"
-            :key="idx"
-            :value="genders_val[idx]"
-          >{{ gender }}</option>
-        </Field>
+        <div><label for="signUpName">이름</label></div>
+        <div><Field type="text" name="signUpName" id="signUpName" placeholder="한글/영문으로 입력해주세요." v-model="credentials.name" :rules="validatename" /></div>
+        <ErrorMessage class="error-message" name="signUpName"/>
       </div>
-      <ErrorMessage class="error-message" name="signUpGender"/>
-    </div>
-    <div>
-      <div><label for="signUpRegion">지역</label></div>
       <div>
-        <Field name="signUpRegion" id="signUpRegion" v-model="credentials.address" as="select" :rules="isRequired">
-          <option
-            v-for="(region, idx) in regions"
-            :key="idx"
-            :value="regions_val[idx]"
-          >{{ region }}</option>
-        </Field>
+        <div><label for="signUpNickName">닉네임</label></div>
+        <div class="field-inline">
+          <Field class="middle-input" type="text" name="signUpNickName" id="signUpNickName" placeholder="닉네임을 입력해주세요." v-model="credentials.nickname" :rules="validateNickname" />
+          <button :class="{ 'fix-btn': account.checkSign.nickName }" type="button" @click="account.duplicateNickname(credentials.nickname)">중복 확인</button>
+        </div>
+        <ErrorMessage v-if="!account.checkSign.nickName" class="error-message" name="signUpNickName"/>
+        <p v-if="account.checkSign.nickName" class="correct-message">사용 가능한 닉네임 입니다.</p>
       </div>
-      <ErrorMessage class="error-message" name="signUpRegion"/>
-    </div>
-    <div>
-      <div><label for="signUpSmoking">흡연여부</label></div>
       <div>
-        <Field name="signUpSmoking" id="signUpSmoking" v-model="credentials.smoke" as="select" :rules="isRequired">
-          <option
-            v-for="(smoke, idx) in smokes"
-            :key="idx"
-            :value="smokes_val[idx]"
-          >{{ smoke }}</option>
-        </Field>
+        <div><label for="signUpYear">생년월일</label></div>
+        <div class="field-inline field-birth">
+          <Field class="sort-input" type="text" name="signUpYear" id="signUpYear" placeholder="년(4자)" v-model="birth.year" :rules="validateBirthYear"/>
+          <Field class="sort-input" name="signUpMonth" id="signUpMonth" v-model="birth.month" as="select" :rules="validateBirthMonth">
+            <option
+               v-for="(month, idx) in months"
+              :key="idx"
+              :value="months_val[idx]"
+            >{{ month }}</option>
+          </Field>
+          <Field class="sort-input" type="text" name="signUpDay" id="signUpDay" placeholder="일" style="margin:0;" v-model="birth.day" :rules="validateBirthDay"/>
+        </div>
+        <ErrorMessage v-if="if_birth===0" class="error-message" name="signUpYear"/>
+        <ErrorMessage v-if="if_birth===1"  class="error-message" name="signUpMonth"/>
+        <ErrorMessage v-if="if_birth===2"  class="error-message" name="signUpDay"/>
       </div>
-      <ErrorMessage class="error-message" name="signUpSmoking"/>
+      <div>
+        <div><label for="signUpGender">성별</label></div>
+        <div>
+          <Field name="signUpGender" id="signUpGender" v-model="credentials.gender" as="select" :rules="isRequired">
+            <option
+              v-for="(gender, idx) in genders"
+              :key="idx"
+              :value="genders_val[idx]"
+            >{{ gender }}</option>
+          </Field>
+        </div>
+        <ErrorMessage class="error-message" name="signUpGender"/>
+      </div>
+      <div>
+        <div><label for="signUpRegion">지역</label></div>
+        <div>
+          <Field name="signUpRegion" id="signUpRegion" v-model="credentials.address" as="select" :rules="isRequired">
+            <option
+              v-for="(region, idx) in regions"
+              :key="idx"
+              :value="regions_val[idx]"
+            >{{ region }}</option>
+          </Field>
+        </div>
+        <ErrorMessage class="error-message" name="signUpRegion"/>
+      </div>
+      <div>
+        <div><label for="signUpSmoking">흡연여부</label></div>
+        <div>
+          <Field name="signUpSmoking" id="signUpSmoking" v-model="credentials.smoke" as="select" :rules="isRequired">
+            <option
+              v-for="(smoke, idx) in smokes"
+              :key="idx"
+              :value="smokes_val[idx]"
+            >{{ smoke }}</option>
+          </Field>
+        </div>
+        <ErrorMessage class="error-message" name="signUpSmoking"/>
+      </div>
+      <button type="submit" class="sign-btn">가입하기</button>
+    </Form>
+    <div class="go-login">
+      이미 회원이신가요? <span @click="land.btnCh=1">로그인 하기</span>
     </div>
-    <button type="submit" class="sign-btn">가입하기</button>
-  </Form>
-  <div class="go-login">
-    이미 회원이신가요? <span @click="land.btnCh=1">로그인 하기</span>
   </div>
 </template>
 
@@ -253,19 +255,25 @@ export default {
 }
 </script>
 
-<style>
+<style scoped>
+.signup-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
 .sign-head {
-  /* width: 400px; */
-  /* height: 40px; */
   font-weight: 700;
   font-size: 32px;
   line-height: 39px;
   color: #8227fa;
-  padding-bottom: 32px;
+  padding-bottom: 28px;
 }
 #signUpForm {
-  height: calc(100% - 120px);
-  margin-right: -32px;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-right: -20px;
+  padding-right: 20px;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -293,19 +301,27 @@ export default {
 }
 #signUpForm div input, #signUpForm div select {
   box-sizing: border-box;
-  width: 412px;
+  width: min(412px, 100%);
   height: 40px;
   background: #FFFFFF;
   border: 1px solid #C1BBBB;
   border-radius: 8px;
   padding: 10px;
 }
+#signUpForm .field-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 #signUpForm div .middle-input {
-  width: 296px;
+  width: min(296px, calc(100% - 112px));
 }
 #signUpForm div .sort-input {
-  width: 132px;
+  width: min(132px, calc((100% - 16px) / 3));
   margin-right: 8px;
+}
+#signUpForm .field-birth .sort-input:last-child {
+  margin-right: 0;
 }
 #signUpForm button {
   box-sizing: border-box;
@@ -321,10 +337,11 @@ export default {
 }
 #signUpForm div button {
   width: 104px;
+  flex: 0 0 104px;
 }
 #signUpForm .sign-btn {
-    width: 412px;
-    margin: 32px 0px 4px 0px;
+  width: min(412px, 100%);
+  margin: 28px 0px 4px 0px;
 }
 #signUpForm button:hover {
   background: #8d39fc;
@@ -332,15 +349,21 @@ export default {
 #signUpForm button:active {
   background: #8122fe;
 }
-.error-message {
-  font-size: 4px;
+#signUpForm .error-message {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 18px;
   color: red
 }
 #signUpForm .error-div {
   padding: 0;
 }
-.correct-message {
-  font-size: 4px;
+#signUpForm .correct-message {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 18px;
   color: green
 }
 .go-login {
@@ -369,5 +392,49 @@ export default {
 }
 #signUpForm .disabled-input-bg {
   background-color: #efefef;
+}
+
+@media (max-width: 640px) {
+  .sign-head {
+    font-size: 28px;
+    line-height: 34px;
+    padding-bottom: 24px;
+  }
+  #signUpForm {
+    margin-right: -12px;
+    padding-right: 12px;
+  }
+  #signUpForm div input,
+  #signUpForm div select,
+  #signUpForm .sign-btn {
+    width: 100%;
+    height: 46px;
+    font-size: 15px;
+  }
+  #signUpForm .field-inline {
+    flex-wrap: wrap;
+  }
+  #signUpForm div .middle-input {
+    width: 100%;
+  }
+  #signUpForm div button {
+    width: 100%;
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  #signUpForm .field-birth {
+    gap: 6px;
+  }
+  #signUpForm div .sort-input {
+    width: calc((100% - 12px) / 3);
+    margin-right: 0;
+  }
+  .go-login {
+    margin-top: 16px;
+    font-size: 15px;
+  }
+  .go-login span {
+    font-size: 13px;
+  }
 }
 </style>

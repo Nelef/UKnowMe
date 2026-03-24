@@ -9,6 +9,7 @@
         <i class="fa-solid fa-xmark x-btn"></i>
       </div>
       <div
+      class="sign-modal-content"
       :class="{
         'signin-modal-content': btnCh===1, 
         'signup-modal-content': btnCh===2,
@@ -59,49 +60,100 @@ export default {
 
 <style>
 .sign-modal-bg {
-  width: 100vw;
-  height:100vh;
-  z-index: 1;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.25);
-  position: fixed;
-  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(24px, calc(env(safe-area-inset-bottom) + 12px))
+    max(16px, env(safe-area-inset-left));
+  overflow-y: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 .sign-modal {
   position: relative;
-  width: 550px;
+  width: min(550px, 100%);
+  max-height: min(760px, calc(100vh - 32px));
+  max-height: min(760px, calc(100dvh - 32px));
+  margin: auto;
   background: #FFFFFF;
   box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
   border-radius: 27px;
-  left:50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
-/* .signin-modal {
-  height: 550px;
-} */
+.signin-modal {
+  min-height: min(480px, calc(100vh - 32px));
+  min-height: min(480px, calc(100dvh - 32px));
+}
 .signup-modal {
-  height: 92%;
+  height: min(740px, calc(100vh - 32px));
+  height: min(740px, calc(100dvh - 32px));
 }
 .sign-modal-content {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 32px 62px;
 }
 .signin-modal-content {
-  padding: 32px 69px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 40px 69px 32px;
   text-align: center;
-  height: 92%;
 }
 .signup-modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   padding: 32px 62px;
-  height: 92%;
 }
 .close-btn {
   position: absolute;
   right: 20px;
   top: 20px;
+  z-index: 1;
 }
 .x-btn {
   font-size: 48px;
   cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .sign-modal-bg {
+    align-items: flex-start;
+    padding-top: max(12px, calc(env(safe-area-inset-top) + 8px));
+  }
+  .sign-modal {
+    width: 100%;
+    border-radius: 24px;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+  .signin-modal {
+    min-height: auto;
+  }
+  .signup-modal {
+    height: calc(100vh - 24px);
+    height: calc(100dvh - 24px);
+  }
+  .sign-modal-content,
+  .signin-modal-content,
+  .signup-modal-content {
+    padding: 72px 20px 24px;
+  }
+  .close-btn {
+    right: 16px;
+    top: 16px;
+  }
+  .x-btn {
+    font-size: 40px;
+  }
 }
 </style>

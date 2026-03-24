@@ -31,40 +31,71 @@ export default {
 <style>
 .side-bar {
   position: fixed;
-  width: 80px;
-  height: 100%;
-  top: 0px;
-  right: 0px;
-  background: #030303;
-  box-shadow: -12.8px 8.53333px 6.4px 6.4px rgba(0, 0, 0, 0.25);
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(160, 86, 255, 0.14);
+  box-shadow: 0 18px 38px rgba(55, 35, 96, 0.18);
+  backdrop-filter: blur(16px);
 }
 .landing-btn {
-  position: absolute;
-  background: #A056FF;
-  border: none;
-  border-radius: 10px;
-  box-shadow: 0px 4px 3px rgba(0, 0, 0, 0.25);
+  flex: 1 1 0;
+  min-width: 0;
+  height: 52px;
+  border-radius: 999px;
   font-style: normal;
-  font-weight: 400;
-  font-size: 17px;
-  line-height: 21px;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 20px;
+  letter-spacing: -0.02em;
   text-align: center;
-  color: white;
+  transition: transform 0.15s ease, box-shadow 0.15s ease,
+    background-color 0.15s ease;
 }
 .landing-btn-side {
-  width: 145px;
-  height: 45px;
   cursor: pointer;
 }
 .landing-btn-signin {
-  right: -20px;
-  top: 24%;
+  background: rgba(255, 255, 255, 0.95);
+  color: #8f4dff;
+  border: 1px solid rgba(160, 86, 255, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 .landing-btn-signup {
-  right: -20px;
-  top: calc(24% + 60px);;
+  border: none;
+  color: #ffffff;
+  background: linear-gradient(135deg, #9448ff 0%, #b76dff 100%);
+  box-shadow: 0 10px 22px rgba(130, 39, 250, 0.25);
 }
 .landing-btn-side:hover {
-  transform: scale(1.05)
+  transform: translateY(-1px);
+}
+.landing-btn-signin:hover {
+  background: #faf6ff;
+  box-shadow: 0 10px 22px rgba(130, 39, 250, 0.12);
+}
+.landing-btn-signup:hover {
+  box-shadow: 0 14px 28px rgba(130, 39, 250, 0.3);
+}
+@media (max-width: 640px) {
+  .side-bar {
+    bottom: 20px;
+    width: calc(100vw - 24px);
+    padding: 10px;
+    gap: 10px;
+  }
+  .landing-btn {
+    height: 48px;
+    font-size: 15px;
+  }
 }
 </style>
