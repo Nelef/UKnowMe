@@ -42,6 +42,7 @@ const IMMUTABLE_CACHE_HEADERS = {
 }
 
 const HASHED_ASSET_PATTERN = /\.[0-9a-f]{8,}\./i
+const VERSION_FILE_NAME = 'version.json'
 
 const createEtag = stats => `W/"${stats.size}-${Math.floor(stats.mtimeMs)}"`
 
@@ -49,7 +50,13 @@ const isHtmlFile = filePath => path.extname(filePath).toLowerCase() === '.html'
 
 const isHashedAsset = filePath => HASHED_ASSET_PATTERN.test(path.basename(filePath))
 
+const isVersionFile = filePath => path.basename(filePath) === VERSION_FILE_NAME
+
 const getCacheHeaders = filePath => {
+  if (isVersionFile(filePath)) {
+    return NO_STORE_HEADERS
+  }
+
   if (isHtmlFile(filePath)) {
     return NO_STORE_HEADERS
   }

@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "serve": "vue-cli-service serve --port 3000",
-    "serve:lan": "vue-cli-service serve --host 0.0.0.0 --port 3000",
-    "build": "vue-cli-service build",
+    "prepare:version": "node scripts/write-version.js",
+    "serve": "npm run prepare:version && vue-cli-service serve --port 3000",
+    "serve:lan": "npm run prepare:version && vue-cli-service serve --host 0.0.0.0 --port 3000",
+    "build": "npm run prepare:version && vue-cli-service build",
     "lint": "vue-cli-service lint"
   },
   "dependencies": {
