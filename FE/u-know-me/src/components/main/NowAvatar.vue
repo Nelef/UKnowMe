@@ -16,7 +16,7 @@
 </template>
 
 <script>
-import { onMounted } from "vue";
+import { onBeforeUnmount, watch } from "vue";
 import { useAvatarStore } from "@/stores/main/avatar";
 import { useAccountStore } from "@/stores/land/account";
 
@@ -25,8 +25,26 @@ export default {
     const avatarFun = useAvatarStore();
     const account = useAccountStore();
 
-    onMounted(() => {
-      setTimeout(() => avatarFun.load(account.currentUser.avatar.seq), 1000);
+    const stopWatchingAvatar = watch(
+      () => account.currentUser.avatar?.seq,
+      (avatarSeq) => {
+        if (!avatarSeq) {
+          return;
+        }
+
+        const progressElement = document.getElementById("progress");
+        if (progressElement) {
+          progressElement.style.display = "block";
+        }
+
+        avatarFun.load(avatarSeq, { persist: false });
+      },
+      { immediate: true }
+    );
+
+    onBeforeUnmount(() => {
+      stopWatchingAvatar();
+      avatarFun.clearRenderer();
     });
 
     return { avatarFun };

@@ -1,15 +1,11 @@
 import { createWebHistory, createRouter } from "vue-router";
 import { useAccountStore } from "@/stores/land/account";
-
-// account
-// import List from './components/컴포넌트명.vue';
-import LandPageView from '@/views/land/LandPageView.vue'
-import ChatView from '@/views/chat/ChatView.vue'
-import MainView from '@/views/main/MainView.vue'
-import AdminView from '@/views/admin/AdminView.vue'
-import Test2View from '@/views/land/Test2View.vue'
-
-import NotFound404 from '@/views/NotFound404.vue'
+const LandPageView = () => import('@/views/land/LandPageView.vue')
+const ChatView = () => import('@/views/chat/ChatView.vue')
+const MainView = () => import('@/views/main/MainView.vue')
+const AdminView = () => import('@/views/admin/AdminView.vue')
+const Test2View = () => import('@/views/land/Test2View.vue')
+const NotFound404 = () => import('@/views/NotFound404.vue')
 
 const routes = [
 //   {

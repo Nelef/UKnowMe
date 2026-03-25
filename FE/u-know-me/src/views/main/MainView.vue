@@ -8,6 +8,7 @@
 </template>
 
 <script>
+import { onMounted } from "vue";
 import AvatarSelect from "@/components/main/AvatarSelect.vue";
 import NowAvatar from "@/components/main/NowAvatar.vue";
 import ButtonList from "@/components/main/ButtonList.vue";
@@ -21,7 +22,11 @@ export default {
   setup() {
     const main = useMainStore();
     const account = useAccountStore();
-    account.fetchCurrentUser();
+
+    onMounted(() => {
+      account.fetchCurrentUser();
+    });
+
     return { main, account };
   },
 };

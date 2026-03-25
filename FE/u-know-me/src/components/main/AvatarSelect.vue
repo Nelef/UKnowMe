@@ -24,7 +24,7 @@
 import AvatarCard from "@/components/main/AvatarCard.vue";
 import { useAvatarStore } from "@/stores/main/avatar";
 import { useAccountStore } from "@/stores/land/account";
-import { onMounted } from "vue";
+import { onBeforeUnmount, onMounted } from "vue";
 
 export default {
   name: "AvatarSelect",
@@ -32,15 +32,21 @@ export default {
   setup() {
     const avatars = useAvatarStore();
     const account = useAccountStore();
+    let mediaViewContent = null;
+    let viewChangeHandler = null;
 
     onMounted(() => {
       //media 반응형
-      const mediaViewContent = window.matchMedia(`(max-width: 700px)`); // 1
-      const viewChangeHandler = (mediaViewContent) => {
+      mediaViewContent = window.matchMedia(`(max-width: 700px)`);
+      viewChangeHandler = (mediaQuery) => {
         var toggleBtn = document.getElementById("avatarBtn");
         var toggle = document.querySelector(".avatarCollection");
 
-        if (mediaViewContent.matches === true) {
+        if (!toggleBtn || !toggle) {
+          return;
+        }
+
+        if (mediaQuery.matches === true) {
           toggle.style.left = "-300px";
           toggleBtn.style.bottom = "50px";
         } else {
@@ -49,6 +55,13 @@ export default {
         }
       };
       mediaViewContent.addEventListener("change", viewChangeHandler);
+      viewChangeHandler(mediaViewContent);
+    });
+
+    onBeforeUnmount(() => {
+      if (mediaViewContent && viewChangeHandler) {
+        mediaViewContent.removeEventListener("change", viewChangeHandler);
+      }
     });
 
     return { avatars, account };

@@ -24,22 +24,82 @@ export const useAvatarStore = defineStore('avatar', {
       { id: 26, name: '도레미', image: require('@/assets/main/girl6.png') },
     ],
     avatarProgress: 0,
+    renderer: null,
+    orbitControls: null,
+    orbitCamera: null,
+    scene: null,
+    currentVrm: null,
+    animationFrameId: null,
+    blinkIntervalId: null,
+    resizeHandler: null,
+    loadRequestId: 0,
   }),
   getters: {
 
   },
   actions: {
-    load(id) {
-      //유저 아바타 변경 api 호출
-      var idJson = new Object();
-      idJson.avatarSeq = id;
-      JSON.stringify(idJson);
-      useAccountStore().changeAvatar(idJson);
-      //three
+    clearRenderer() {
+      if (this.animationFrameId) {
+        cancelAnimationFrame(this.animationFrameId);
+        this.animationFrameId = null;
+      }
+
+      if (this.blinkIntervalId) {
+        clearInterval(this.blinkIntervalId);
+        this.blinkIntervalId = null;
+      }
+
+      if (this.resizeHandler) {
+        window.removeEventListener("resize", this.resizeHandler);
+        this.resizeHandler = null;
+      }
+
+      if (this.orbitControls) {
+        this.orbitControls.dispose();
+        this.orbitControls = null;
+      }
+
+      if (this.currentVrm?.scene?.parent) {
+        this.currentVrm.scene.parent.remove(this.currentVrm.scene);
+      }
+      this.currentVrm = null;
+
+      if (this.renderer) {
+        this.renderer.dispose();
+        if (typeof this.renderer.forceContextLoss === "function") {
+          this.renderer.forceContextLoss();
+        }
+        const canvas = this.renderer.domElement;
+        if (canvas?.parentNode) {
+          canvas.parentNode.removeChild(canvas);
+        }
+        this.renderer = null;
+      }
+
+      this.scene = null;
+      this.orbitCamera = null;
+    },
+    load(id, options = {}) {
+      const { persist = true } = options;
+
+      if (persist) {
+        const idJson = { avatarSeq: id };
+        useAccountStore().changeAvatar(idJson);
+
+        if (useAccountStore().currentUser?.avatar) {
+          useAccountStore().currentUser.avatar.seq = id;
+        }
+      }
+
+      this.loadRequestId += 1;
+      const loadRequestId = this.loadRequestId;
+      this.avatarProgress = 0;
+      this.clearRenderer();
+
       const scene = new THREE.Scene();
       const renderer = new THREE.WebGLRenderer({ alpha: true });
       renderer.setSize(window.innerWidth, window.innerHeight, false);
-      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.domElement.id = "nowAvatar";
 
       document.getElementById("nowAvatarDiv").append(renderer.domElement);
@@ -54,11 +114,12 @@ export const useAvatarStore = defineStore('avatar', {
       orbitCamera.position.set(0.0, 1.4, 0.7);
 
       // window resize
-      window.onresize = function () {
+      const resizeHandler = () => {
         orbitCamera.aspect = window.innerWidth / window.innerHeight;
         orbitCamera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
       };
+      window.addEventListener("resize", resizeHandler);
 
       // controls
       const orbitControls = new OrbitControls.OrbitControls(
@@ -81,23 +142,26 @@ export const useAvatarStore = defineStore('avatar', {
       light.position.set(1.0, 1.0, 1.0).normalize();
       scene.add(light);
 
-      /* THREEJS WORLD SETUP */
-      let currentVrm;
+      this.scene = scene;
+      this.renderer = renderer;
+      this.orbitControls = orbitControls;
+      this.orbitCamera = orbitCamera;
+      this.resizeHandler = resizeHandler;
 
       // Main Render Loop
       const clock = new THREE.Clock();
 
-      function animate() {
-        requestAnimationFrame(animate);
+      const animate = () => {
+        this.animationFrameId = requestAnimationFrame(animate);
 
-        if (currentVrm) {
+        if (this.currentVrm) {
           // Update model to render physics
-          currentVrm.update(clock.getDelta());
+          this.currentVrm.update(clock.getDelta());
         }
         renderer.render(scene, orbitCamera);
 
         orbitControls.update();
-      }
+      };
       animate();
 
       // Import Character VRM
@@ -110,9 +174,16 @@ export const useAvatarStore = defineStore('avatar', {
         "vrm/" + id + ".vrm",
 
         (gltf) => {
+          if (loadRequestId !== this.loadRequestId) {
+            return;
+          }
+
           VRMUtils.VRMUtils.removeUnnecessaryJoints(gltf.scene);
 
           VRMUtils.VRM.from(gltf).then((vrm) => {
+            if (loadRequestId !== this.loadRequestId) {
+              return;
+            }
 
             vrm.humanoid.setPose({
               [VRMUtils.VRMSchema.HumanoidBoneName.LeftShoulder]: {
@@ -136,8 +207,8 @@ export const useAvatarStore = defineStore('avatar', {
             });
 
             scene.add(vrm.scene);
-            currentVrm = vrm;
-            currentVrm.scene.rotation.y = Math.PI; // Rotate model 180deg to face camera
+            this.currentVrm = vrm;
+            this.currentVrm.scene.rotation.y = Math.PI; // Rotate model 180deg to face camera
             vrm.lookAt.target = orbitCamera; // look camera
             vrm.blendShapeProxy.setValue(VRMUtils.VRMSchema.BlendShapePresetName.Fun, 0.3);
             vrm.blendShapeProxy.setValue(VRMUtils.VRMSchema.BlendShapePresetName.A, 0.4);
@@ -148,12 +219,18 @@ export const useAvatarStore = defineStore('avatar', {
 
         //progress 값이 바뀔 때마다
         (progress) => {
-          document.getElementById("progress").style.color = "#a056ff";
+          const progressElement = document.getElementById("progress");
+          if (progressElement) {
+            progressElement.style.color = "#a056ff";
+          }
 
           this.avatarProgress = 100 * (progress.loaded / progress.total)
           if (this.avatarProgress == 100) {
             setTimeout(function () {
-              document.getElementById("progress").style.display = "none";
+              const element = document.getElementById("progress");
+              if (element) {
+                element.style.display = "none";
+              }
             }, 1000);
           }
         },
@@ -161,12 +238,10 @@ export const useAvatarStore = defineStore('avatar', {
         (error) => console.error(error)
       )
 
-      setInterval(blink, 1000)
-
-      function blink() {
+      const blink = () => {
         for (let i = 0; i < 4; i++) {
-          if (currentVrm.scene) {
-            var vrm = currentVrm;
+          if (this.currentVrm?.scene) {
+            var vrm = this.currentVrm;
             var blinkValue = vrm.blendShapeProxy.getValue(VRMUtils.VRMSchema.BlendShapePresetName.Blink)
             if (blinkValue === 0) {
               var rand = Math.random()
@@ -179,7 +254,8 @@ export const useAvatarStore = defineStore('avatar', {
             vrm.blendShapeProxy.update()
           }
         }
-      }
+      };
+      this.blinkIntervalId = setInterval(blink, 1000)
     }
   },
 })

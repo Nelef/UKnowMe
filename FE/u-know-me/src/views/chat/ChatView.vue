@@ -113,6 +113,7 @@ export default {
       myUserName: "",
       timeIntervalId: null,
       keywordIntervalId: null,
+      readyIntervalId: null,
       beforeUnloadHandler: null,
       remoteParticipants: [],
     };
@@ -140,6 +141,9 @@ export default {
     if (this.keywordIntervalId) {
       window.clearInterval(this.keywordIntervalId);
     }
+    if (this.readyIntervalId) {
+      window.clearInterval(this.readyIntervalId);
+    }
     if (this.beforeUnloadHandler) {
       window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     }
@@ -160,7 +164,7 @@ export default {
       }
       await this.chat.avatarLoad(this.account.currentUser.avatar.seq);
       var avatarVideo = await this.chat.startHolistic();
-      var interval = setInterval(() => {
+      this.readyIntervalId = window.setInterval(() => {
         if (this.chat.ready) {
           this.chat.loadingText = "안정화 중..";
           setTimeout(() => {
@@ -172,7 +176,10 @@ export default {
 
             this.startLiveKit(avatarVideo);
           }, 3000);
-          clearInterval(interval);
+          if (this.readyIntervalId) {
+            window.clearInterval(this.readyIntervalId);
+            this.readyIntervalId = null;
+          }
         }
       }, 1000);
     },
