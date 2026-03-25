@@ -367,19 +367,37 @@ export default {
     },
 
     createParticipantToken(mySessionId) {
+      const liveKitClientId = this.getOrCreateLiveKitClientId();
+
       return axios({
         url: sr.sessions.connect(),
         method: "post",
         data: {
           roomSeq: String(mySessionId),
-          participantIdentity: String(this.account.currentUser.seq),
+          participantIdentity: `${this.account.currentUser.seq}:${liveKitClientId}`,
           participantName: this.account.currentUser.nickname,
           participantMetadata: JSON.stringify({
             memberSeq: this.account.currentUser.seq,
+            clientId: liveKitClientId,
           }),
         },
         headers: this.account.authHeader,
       }).then((response) => response.data);
+    },
+    getOrCreateLiveKitClientId() {
+      const storageKey = "ukm-livekit-client-id";
+      const existingClientId = window.sessionStorage.getItem(storageKey);
+
+      if (existingClientId) {
+        return existingClientId;
+      }
+
+      const generatedClientId =
+        window.crypto?.randomUUID?.() ||
+        `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+      window.sessionStorage.setItem(storageKey, generatedClientId);
+      return generatedClientId;
     },
     isLiveKitQuotaExceededError(error) {
       const candidates = [
