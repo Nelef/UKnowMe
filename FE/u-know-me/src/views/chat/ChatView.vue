@@ -62,7 +62,7 @@
         </div>
         <user-video
           v-for="participant in remoteParticipants"
-          :key="participant.identity"
+          :key="participant.renderKey || participant.identity"
           :participant="participant"
         />
       </div>
@@ -308,6 +308,8 @@ export default {
 
       room.on(RoomEvent.TrackSubscribed, syncParticipants);
       room.on(RoomEvent.TrackUnsubscribed, syncParticipants);
+      room.on(RoomEvent.TrackPublished, syncParticipants);
+      room.on(RoomEvent.TrackUnpublished, syncParticipants);
       room.on(RoomEvent.ParticipantConnected, syncParticipants);
       room.on(RoomEvent.ParticipantDisconnected, syncParticipants);
       room.on(RoomEvent.Disconnected, () => {
@@ -346,12 +348,22 @@ export default {
           name: participant.name || participant.identity,
           videoTrack,
           audioTrack,
+          renderKey: `${participant.identity}:${videoTrack?.sid || "no-video"}:${audioTrack?.sid || "no-audio"}`,
         });
       });
 
       this.remoteParticipants = participants.filter(
         participant => participant.videoTrack || participant.audioTrack
       );
+
+      this.chat.logDebug("syncRemoteParticipants", {
+        count: this.remoteParticipants.length,
+        participants: this.remoteParticipants.map((participant) => ({
+          identity: participant.identity,
+          videoSid: participant.videoTrack?.sid || null,
+          audioSid: participant.audioTrack?.sid || null,
+        })),
+      });
     },
 
     createParticipantToken(mySessionId) {

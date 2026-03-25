@@ -70,7 +70,14 @@ export default {
         return;
       }
 
-      this.audioTrack.attach(audioElement);
+      const attachedElement = this.audioTrack.attach(audioElement);
+      attachedElement.autoplay = true;
+      attachedElement.muted = false;
+      attachedElement
+        .play()
+        .catch((error) => {
+          console.warn("상대방 오디오 재생 요청에 실패했습니다.", error);
+        });
       this.attachedAudioTrack = this.audioTrack;
     },
 
@@ -86,7 +93,14 @@ export default {
         return;
       }
 
-      this.videoTrack.attach(videoElement);
+      const attachedElement = this.videoTrack.attach(videoElement);
+      attachedElement.autoplay = true;
+      attachedElement.playsInline = true;
+      attachedElement
+        .play()
+        .catch((error) => {
+          console.warn("상대방 비디오 재생 요청에 실패했습니다.", error);
+        });
       this.attachedVideoTrack = this.videoTrack;
     },
 
