@@ -94,8 +94,8 @@ export default {
   top: 20%;
 }
 .logout-modal {
-  width: 440px;
-  height: 240px;
+  width: min(460px, calc(100vw - 32px));
+  min-height: 0;
 }
 .inform-modal {
   width: 640px;
@@ -121,7 +121,7 @@ export default {
   height: 80%;
 }
 .logout-modal-content {
-  padding: 32px 62px;
+  padding: 38px 38px 34px;
   text-align: left;
 }
 .inform-modal-content {
