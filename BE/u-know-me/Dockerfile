@@ -24,9 +24,6 @@ ENV ARTIFACT_NAME=u-know-me-0.0.1-SNAPSHOT.jar \
     DB_PASSWORD=uknowme123! \
     DB_DDL_AUTO=update \
     FILE_DIRECTORY=/opt/download/avatars \
-    LIVEKIT_WS_URL=wss://livekit.imoneleft.synology.me \
-    LIVEKIT_API_KEY=uknowme \
-    LIVEKIT_API_SECRET=uknowme123 \
     DB_DATA_DIR=/var/lib/mysql \
     DB_RUN_DIR=/run/mysqld
 

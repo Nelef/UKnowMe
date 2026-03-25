@@ -25,6 +25,15 @@ DB_INSTALL_BIN="$(command -v mariadb-install-db || command -v mysql_install_db)"
 DB_PID=""
 APP_PID=""
 
+require_env() {
+    var_name="$1"
+    eval "var_value=\${$var_name-}"
+    if [ -z "$var_value" ]; then
+        echo "Required environment variable '$var_name' is not set." >&2
+        exit 1
+    fi
+}
+
 mysql_ready() {
     "$DB_ADMIN_BIN" \
         --protocol=socket \
@@ -100,6 +109,10 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$APP_HOME" "$DB_DATA_DIR" "$DB_RUN_DIR" "$FILE_DIRECTORY"
 chown -R mysql:mysql "$DB_DATA_DIR" "$DB_RUN_DIR"
+
+require_env LIVEKIT_WS_URL
+require_env LIVEKIT_API_KEY
+require_env LIVEKIT_API_SECRET
 
 if [ ! -d "${DB_DATA_DIR}/mysql" ]; then
     echo "Initializing MariaDB data directory..."

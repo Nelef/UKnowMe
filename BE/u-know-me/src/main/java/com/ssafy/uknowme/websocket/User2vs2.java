@@ -31,12 +31,10 @@ public class User2vs2 {
     private WebSocketSession session;
 
     public void convertToJSOvject(JSONObject jObject, WebSocketSession session) {
-
-
         this.seq = Integer.parseInt(jObject.getString("seq"));
         this.id = jObject.getString("id");
         this.nickname = jObject.getString("nickName");
-        this.gender = jObject.getString("gender").charAt(0);
+        this.gender = normalizeGender(jObject.getString("gender"));
         this.maxAge = Integer.parseInt(jObject.getString("maxAge"));
         this.minAge = Integer.parseInt(jObject.getString("minAge"));
         this.age = Integer.parseInt(jObject.getString("age"));
@@ -45,5 +43,12 @@ public class User2vs2 {
         this.session = session;
     }
 
+    private char normalizeGender(String gender) {
+        if ("F".equalsIgnoreCase(gender)) {
+            return 'W';
+        }
+
+        return gender.charAt(0);
+    }
 
 }

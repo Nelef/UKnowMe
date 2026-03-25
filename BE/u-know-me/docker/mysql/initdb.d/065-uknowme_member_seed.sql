@@ -1,0 +1,7 @@
+LOCK TABLES `member` WRITE;
+/*!40000 ALTER TABLE `member` DISABLE KEYS */;
+INSERT INTO `member` VALUES
+(2,'2026-03-25 10:15:00.000000','initdb','N','2026-03-25 10:15:00.000000','initdb','테스트용 주소','19960101','M','test',NULL,0,'테스트남',NULL,'테스트남','{bcrypt}$2a$10$WkI88ivUAB9L4gZGkQXHs.4BgXHNGlMU8ugbXZeoE2JNF013e0MMu',NULL,NULL,'ROLE_USER','2',NULL,11),
+(3,'2026-03-25 10:15:00.000000','initdb','N','2026-03-25 10:15:00.000000','initdb','테스트용 주소','19970101','W','test2',NULL,0,'테스트여',NULL,'테스트여','{bcrypt}$2a$10$DjbCtMy/60pfJOA7kH4YMec8aiazh7tpf7UIYf8BYKHxtLb/WvrY6',NULL,NULL,'ROLE_USER','2',NULL,21);
+/*!40000 ALTER TABLE `member` ENABLE KEYS */;
+UNLOCK TABLES;

@@ -42,11 +42,22 @@ export const useChatStore = defineStore('chat', {
     ready: false,
     heartRainFlag: false,
     leavingSession: false,
+    soloMode: false,
+    liveKitQuotaModal: false,
   }),
   getters: {
 
   },
   actions: {
+    resetSessionUiState() {
+      this.otherPeople = [];
+      this.heartRainFlag = false;
+      this.ready = false;
+      this.mobile = false;
+      this.accuseBtn = 0;
+      this.gameBtn = 0;
+    },
+
     getTime() {
       let today = new Date();
 
@@ -533,10 +544,7 @@ export const useChatStore = defineStore('chat', {
       }
 
       this.resetLiveKitState();
-      this.otherPeople = [];
-      this.heartRainFlag = false;
-      this.ready = false;
-      this.mobile = false;
+      this.resetSessionUiState();
       this.leavingSession = false;
 
       if (navigate) {
@@ -623,6 +631,11 @@ export const useChatStore = defineStore('chat', {
     },
 
     balanceClick() {
+      if (this.soloMode || !this.webSocket) {
+        this.systemMessagePrint("혼자 해보기에서는 밸런스 게임을 사용할 수 없습니다.")
+        return
+      }
+
       let message = `{
         "key" : "balance_q_request_${useMainStore().option.matchingRoom}",
         "room" : "${this.SessionName}"
@@ -633,6 +646,11 @@ export const useChatStore = defineStore('chat', {
     },
 
     balanceAnswerClick(answser) {
+      if (this.soloMode || !this.webSocket) {
+        this.gameBtn = 0
+        return
+      }
+
       this.gameBtn = 0
       let message = `{
         "key" : "balance_a_request_${useMainStore().option.matchingRoom}",
@@ -647,6 +665,10 @@ export const useChatStore = defineStore('chat', {
     },
 
     motionClick() {
+      if (!this.camera) {
+        return
+      }
+
       this.camera.stop();
       let videoElement;
 
@@ -674,6 +696,11 @@ export const useChatStore = defineStore('chat', {
     },
 
     heartClick() {
+      if (this.soloMode || !this.webSocket) {
+        this.systemMessagePrint("혼자 해보기에서는 하트 기능을 사용할 수 없습니다.")
+        return
+      }
+
       if (useMainStore().option.matchingRoom == "1") {
         this.systemMessagePrint("하트를 눌렸습니다! 상대방이 하트를 누르면 서로의 카메라가 공개됩니다.")
       }
@@ -716,6 +743,10 @@ export const useChatStore = defineStore('chat', {
         height: 480,
       });
       this.camera.start();
+
+      if (!this.room || this.soloMode) {
+        return
+      }
 
       createLocalVideoTrack()
         .then(newTrack => this.switchPublishedVideoTrack(newTrack, {

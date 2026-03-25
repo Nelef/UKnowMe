@@ -56,6 +56,7 @@
     <game-modal v-if="chat.gameBtn === 1" />
     <!-- <chat-something /> -->
     <loading-modal v-if="chat.loading === 1" />
+    <live-kit-limit-modal v-if="chat.liveKitQuotaModal" />
   </div>
 </template>
 
@@ -73,6 +74,7 @@ import AccuseModal from "@/components/chat/AccuseModal.vue";
 import GameModal from "@/components/chat/GameModal.vue";
 import LoadingModal from "@/components/chat/LoadingModal.vue";
 import HeartRain from "@/components/chat/HeartRain.vue";
+import LiveKitLimitModal from "@/components/chat/LiveKitLimitModal.vue";
 import { useMainStore } from "@/stores/main/main";
 import sr from "@/api/spring-rest";
 
@@ -88,6 +90,7 @@ export default {
     GameModal,
     LoadingModal,
     HeartRain,
+    LiveKitLimitModal,
   },
   setup() {
     const account = useAccountStore();
@@ -147,16 +150,26 @@ export default {
   methods: {
     async joinSession() {
       await this.account.fetchCurrentUser();
+      this.chat.soloMode = this.$route.query.solo === "1";
+      this.chat.liveKitQuotaModal = false;
       this.chat.getTime();
       this.mySessionId = String(this.SessionName || "SessionA");
       this.myUserName = this.account.currentUser.nickname;
-      this.chat.socketConnect(this.account.currentUser.seq);
+      if (!this.chat.soloMode) {
+        this.chat.socketConnect(this.account.currentUser.seq);
+      }
       await this.chat.avatarLoad(this.account.currentUser.avatar.seq);
       var avatarVideo = await this.chat.startHolistic();
       var interval = setInterval(() => {
         if (this.chat.ready) {
           this.chat.loadingText = "안정화 중..";
           setTimeout(() => {
+            if (this.chat.soloMode) {
+              this.chat.loading = 0;
+              this.chat.systemMessagePrint("혼자 해보기 모드입니다.");
+              return;
+            }
+
             this.startLiveKit(avatarVideo);
           }, 3000);
           clearInterval(interval);
@@ -198,6 +211,19 @@ export default {
       } catch (error) {
         console.error("LiveKit 연결 중 오류가 발생했습니다.", error);
         this.chat.loading = 0;
+
+        if (this.isLiveKitQuotaExceededError(error)) {
+          this.chat.liveKitQuotaModal = true;
+
+          if (this.chat.webSocket) {
+            try {
+              this.chat.webSocket.close();
+            } catch (closeError) {
+              console.warn("채팅 웹소켓 종료 중 오류가 발생했습니다.", closeError);
+            }
+            this.chat.webSocket = null;
+          }
+        }
       }
     },
 
@@ -266,6 +292,28 @@ export default {
         },
         headers: this.account.authHeader,
       }).then((response) => response.data);
+    },
+    isLiveKitQuotaExceededError(error) {
+      const candidates = [
+        error?.message,
+        error?.reason,
+        error?.details,
+        error?.response?.data?.message,
+        error?.response?.data?.error,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return (
+        error?.status === 429 ||
+        error?.response?.status === 429 ||
+        candidates.includes("quota") ||
+        candidates.includes("limit") ||
+        candidates.includes("exceed") ||
+        candidates.includes("resource_exhausted") ||
+        candidates.includes("concurrent")
+      );
     },
   },
 };

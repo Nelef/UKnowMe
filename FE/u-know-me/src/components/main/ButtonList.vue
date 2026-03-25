@@ -76,14 +76,38 @@ export default {
 
     let { SessionName, otherPeople } = storeToRefs(chat);
 
-    return { main, account, SessionName, otherPeople };
+    return { main, account, chat, SessionName, otherPeople };
   },
   methods: {
+    normalizeGender(gender) {
+      if (gender === "F") {
+        return "W";
+      }
+
+      return gender;
+    },
+    normalizeSmoke(smoke) {
+      if (smoke === "Y") {
+        return "1";
+      }
+
+      if (smoke === "N") {
+        return "2";
+      }
+
+      return String(smoke);
+    },
     oneMatchStart() {
-      router.push({ name: "chat" })
+      this.chat.soloMode = true;
+      this.chat.liveKitQuotaModal = false;
+      this.chat.resetSessionUiState();
+      this.SessionName = "solo";
+      router.push({ name: "chat", query: { solo: "1" } })
     },
     matchStart() {
       const self = this;
+      this.chat.soloMode = false;
+      this.chat.liveKitQuotaModal = false;
       // 나의 위치정보 추출
       this.whereami();
 
@@ -141,13 +165,14 @@ export default {
 
           try {
             let age = this.calcAge(this.account.currentUser.birth);
-            let smoke = this.account.currentUser.smoke;
+            let smoke = this.normalizeSmoke(this.account.currentUser.smoke);
+            let gender = this.normalizeGender(this.account.currentUser.gender);
 
             let sendData = `{
               "key" : "match_start_${this.main.option.matchingRoom}",
               "id" : "${this.account.currentUser.id}",
               "seq" : "${this.account.currentUser.seq}",
-              "gender" : "${this.account.currentUser.gender}",
+              "gender" : "${gender}",
               "nickName":"${this.account.currentUser.nickname}",
               "age" : "${age}",
               "maxAge":"${age + this.main.option.maxAge}",

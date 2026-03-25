@@ -7,7 +7,7 @@
         :key="i"
       />
     </div>
-    <div v-if="account.currentUser.gender == 'W'" class="avatar-card-container">
+    <div v-if="isWoman" class="avatar-card-container">
       <avatar-card
         v-for="(avatar, i) in avatars.avatarWoman"
         :avatar="avatar"
@@ -52,6 +52,11 @@ export default {
     });
 
     return { avatars, account };
+  },
+  computed: {
+    isWoman() {
+      return ["W", "F"].includes(this.account.currentUser.gender);
+    },
   },
   methods: {
     toggleAvatar() {

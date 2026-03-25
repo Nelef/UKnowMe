@@ -47,13 +47,12 @@ description: Work on the UKnowMe monorepo. Use when changing the Vue frontend, S
 
 - Frontend container serves on `3000`.
 - Backend container maps `8888 -> 8080`.
-- LiveKit minimal public config is:
-  - reverse proxy `443 -> 7880`
-  - direct `7881/tcp`
+- LiveKit deployment docs are currently written for `LiveKit Cloud`, not self-hosted `livekit-server`.
 - Keep docs in sync when deployment behavior changes:
   - `README.md`
   - `assets/description/docker_build.md`
   - `assets/description/local_run.md`
+- Backend Docker entrypoint runs under Alpine `/bin/sh` (`ash`), so do not use bash-only substitutions such as `${!var}`.
 
 ## Working Rules
 

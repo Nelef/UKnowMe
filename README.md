@@ -118,11 +118,11 @@ https://youtu.be/At3uHTK2e08?t=651
 
 화상 채팅 미디어 서버는 현재 LiveKit 기준으로 정리되어 있습니다.
 
-- 프론트/백엔드와 분리된 별도 서비스로 실행
-- 최소 공개 포트 구성: `443/tcp` + `7881/tcp`
+- 프론트/백엔드와 분리된 `LiveKit Cloud` 프로젝트를 사용
+- 서버에 배포하는 tar는 프론트와 백엔드 2개
 - 백엔드는 `LIVEKIT_WS_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` 로 LiveKit에 연결
 
-최소 포트 구성은 UDP를 열지 않는 타협안이어서, 연결 품질과 성공률은 정석 구성보다 떨어질 수 있습니다. 구체적인 실행 명령과 reverse proxy 구성은 [Docker 이미지 빌드 및 tar 생성](./assets/description/docker_build.md) 에 정리해두었습니다.
+LiveKit Cloud 프로젝트 URL과 API 키/시크릿은 이미지에 고정하지 않고, 백엔드 컨테이너 실행 시 환경변수로 넣는 구조입니다. 구체적인 실행 명령은 [Docker 이미지 빌드 및 tar 생성](./assets/description/docker_build.md) 에 정리해두었습니다.
 
 <br>
 
@@ -141,3 +141,4 @@ https://youtu.be/At3uHTK2e08?t=651
 ## 💻 로컬 실행 방법
 
 - [로컬 실행 가이드](./assets/description/local_run.md)
+- 백엔드 로컬 실행 시에도 `LIVEKIT_WS_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` 환경변수가 필요합니다.

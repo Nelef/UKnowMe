@@ -48,12 +48,12 @@
         <div class="option">
           <button
             class="chat-btn-lg"
-            @click="chat.balanceClick(), (chat.gameBtn = 1)"
+            @click="openBalanceGame()"
           >
             <img src="@/assets/chat/game-img.png" alt="" />
             <div>밸런스 게임</div>
           </button>
-          <button class="chat-btn-lg" @click="chat.accuseBtn = 1">
+          <button class="chat-btn-lg" @click="openAccuseModal()">
             <img src="@/assets/chat/accuse-img.png" alt="" />
             <div>신고하기</div>
           </button>
@@ -96,11 +96,11 @@
       <div class="chat-left-container" style="min-width: 160px; height: 300px">
         <div class="option-btn-list" style="margin: auto 0px">
           <div class="option" style="margin-left: auto; margin-right: 0">
-            <button class="chat-btn-lg-mobile" @click="chat.balanceClick()">
+            <button class="chat-btn-lg-mobile" @click="openBalanceGame()">
               <img src="@/assets/chat/game-img.png" alt="" />
               <div>밸런스 게임</div>
             </button>
-            <button class="chat-btn-lg-mobile" @click="chat.accuseBtn = 1">
+            <button class="chat-btn-lg-mobile" @click="openAccuseModal()">
               <img src="@/assets/chat/accuse-img.png" alt="" />
               <div>신고하기</div>
             </button>
@@ -254,6 +254,11 @@ export default {
   },
   methods: {
     love() {
+      if (this.chat.soloMode) {
+        this.chat.heartClick();
+        return;
+      }
+
       if (!this.success) {
         this.chat.heartClick();
         this.success = true;
@@ -268,6 +273,25 @@ export default {
           heartImg[i].style.animationIterationCount = "infinite";
         }
       }
+    },
+    openBalanceGame() {
+      this.chat.balanceClick();
+
+      if (this.chat.soloMode) {
+        return;
+      }
+
+      this.chat.gameBtn = 1;
+    },
+    openAccuseModal() {
+      if (this.chat.soloMode) {
+        this.chat.systemMessagePrint(
+          "혼자 해보기에서는 신고 기능을 사용할 수 없습니다."
+        );
+        return;
+      }
+
+      this.chat.accuseBtn = 1;
     },
     chatSubMobileClick() {
       if (!this.chatExpand) {

@@ -6,6 +6,10 @@ Apple Silicon Mac 환경에서 리눅스 AMD64 서버용 이미지를 만들 때
 
 이 방식은 Docker Desktop에서 간헐적으로 발생하는 image store / snapshot 오류를 피하기 쉽습니다.
 
+중요한 점은 `tar` 파일을 만드는 단계에서는 포트와 환경변수가 이미지 안에 자동으로 고정되지 않는다는 것입니다. 실제 배포 시점에 `docker run -p ... -e ...` 로 직접 넣어줘야 합니다.
+
+특히 백엔드 이미지는 `LIVEKIT_WS_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` 가 없으면 아예 시작하지 않도록 되어 있습니다.
+
 ## 프론트엔드
 
 프론트엔드 이미지는 `u-know-me-front` 태그로 빌드하고, 같은 이름으로 `tar`를 저장합니다.
@@ -23,103 +27,81 @@ docker buildx build --platform linux/amd64 -t u-know-me-front --output type=dock
 
 별도의 DB 이미지를 따로 빌드하지 않고 `u-know-me-back` 이미지 하나만 생성하면 됩니다.
 
-LiveKit은 백엔드 이미지 안에 넣지 않고, 별도 이미지로 운영하는 것을 권장합니다. 현재 프론트는 LiveKit secret을 직접 들고 있지 않고, 백엔드가 `/session` API로 LiveKit participant token을 발급하는 구조입니다.
+초기 DB 생성 시 아래 테스트 계정도 함께 들어갑니다.
+
+- 남자 테스트 계정: `test / testtest1!`
+- 여자 테스트 계정: `test2 / testtest2@`
 
 ```bash
 cd BE/u-know-me
 docker buildx build --platform linux/amd64 -t u-know-me-back --output type=docker,dest=u-know-me-back.tar .
 ```
 
-## LiveKit
+## LiveKit Cloud
 
-### 권장 구조
+### 현재 구조
 
-이 프로젝트는 LiveKit을 프론트/백엔드와 분리된 별도 서비스로 둡니다.
+현재 프로젝트는 별도 `livekit-server` 이미지를 배포하는 방식이 아니라 `LiveKit Cloud` 프로젝트에 붙는 방식입니다.
 
 - 프론트: `u-know-me-front`
 - 백엔드: `u-know-me-back`
-- 미디어 서버: `livekit-server`
+- 미디어 서버: LiveKit Cloud
+
+즉 서버에 올리는 tar는 프론트와 백엔드 2개만 있으면 됩니다.
 
 공식 문서:
 
-- https://docs.livekit.io/transport/self-hosting/deployment/
-- https://docs.livekit.io/transport/self-hosting/ports-firewall/
-- https://docs.livekit.io/frontends/build/authentication/endpoint/
+- https://docs.livekit.io/intro/basics/cli/projects/
+- https://docs.livekit.io/home/cli-setup/
+- https://livekit.io/pricing
+- https://docs.livekit.io/deploy/admin/quotas-and-limits/
 
-### 최소 포트 구성
+### LiveKit Cloud에서 준비할 값
 
-이번 프로젝트의 최소 공개 포트 구성은 아래 기준입니다.
+LiveKit Cloud 프로젝트를 만든 뒤 프로젝트 설정에서 아래 3개를 확인합니다.
 
-- `443/tcp`: `https://livekit.imoneleft.synology.me` -> LiveKit `7880`
-- `7881/tcp`: ICE/TCP fallback 용으로 직접 개방
+- `Project URL`
+  - `wss://` 로 시작하는 주소
+- `API Key`
+- `API Secret`
 
-이 구성은 UDP 없이 최대한 붙게 하는 최소 구성입니다. 품질과 연결 성공률은 UDP를 여는 정석 구성보다 떨어질 수 있습니다.
+이 프로젝트는 프론트가 LiveKit secret을 직접 들고 있지 않고, 백엔드가 `/session` API에서 participant token을 발급하는 구조입니다. 그래서 LiveKit 값은 모두 백엔드에만 넣으면 됩니다.
 
-중요한 점은 `443 reverse proxy` 만으로는 부족하다는 것입니다. LiveKit 공식 문서 기준 `7880` 은 API/WebSocket, `7881` 은 UDP가 막혔을 때 쓰는 ICE/TCP fallback 포트입니다. 따라서 `7881/tcp` 는 공유기/NAT/방화벽에서 직접 열어야 합니다.
-
-### LiveKit tar 생성
-
-운영에서는 검증한 버전 태그로 고정하는 편이 좋지만, 예시는 `latest` 를 사용합니다.
-
-```bash
-docker pull --platform linux/amd64 livekit/livekit-server:latest
-docker save -o livekit-server.tar livekit/livekit-server:latest
-```
-
-대상 서버에서:
-
-```bash
-docker load -i livekit-server.tar
-```
-
-### LiveKit 설정 파일 예시
-
-예를 들어 `/volume1/docker/livekit/livekit.yaml` 파일을 아래처럼 준비합니다.
-
-```yaml
-port: 7880
-rtc:
-  tcp_port: 7881
-  use_external_ip: true
-keys:
-  uknowme: uknowme123
-```
-
-이 설정은 최소 포트 기준 예시입니다.
-
-- `port: 7880`: reverse proxy가 붙는 HTTP/WebSocket 포트
-- `rtc.tcp_port: 7881`: UDP가 막힌 환경에서 쓰는 TCP fallback 포트
-- `keys`: 백엔드 `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` 와 동일해야 함
-
-### LiveKit 실행 예시
-
-```bash
-docker run -d --name livekit \
-  -p 7880:7880 \
-  -p 7881:7881 \
-  -v /volume1/docker/livekit/livekit.yaml:/etc/livekit.yaml \
-  livekit/livekit-server:latest \
-  --config /etc/livekit.yaml
-```
-
-Synology 기준 reverse proxy 는 아래처럼 맞추면 됩니다.
-
-- source: `https://livekit.imoneleft.synology.me:443`
-- destination: `http://127.0.0.1:7880`
-
-그리고 `7881/tcp` 는 reverse proxy가 아니라 방화벽/NAT에서 직접 열어야 합니다.
+무료 플랜으로 시작할 수는 있지만 quota가 있는 방식입니다. 이 프로젝트 프론트는 LiveKit Cloud quota가 모두 소진되면 채팅 입장 시 모달을 띄우고 `혼자 해보기` 로 유도하도록 되어 있습니다.
 
 ### 백엔드 실행 예시
 
-백엔드는 LiveKit URL과 API 키를 환경변수로 받습니다.
+백엔드는 LiveKit Cloud URL과 API 키를 환경변수로 받습니다.
+
+아래 4개 값은 실제 배포 시 반드시 운영 값으로 넣어야 합니다.
+
+- `-p 8888:8080`
+- `DB_PASSWORD`
+- `LIVEKIT_WS_URL`
+- `LIVEKIT_API_KEY`
+- `LIVEKIT_API_SECRET`
+
+이 값 중 LiveKit 관련 3개가 빠지면 컨테이너는 시작 단계에서 즉시 종료됩니다.
 
 ```bash
 docker run -d --name u-know-me-back \
   -p 8888:8080 \
   -e DB_PASSWORD=uknowme123! \
-  -e LIVEKIT_WS_URL=wss://livekit.imoneleft.synology.me \
-  -e LIVEKIT_API_KEY=uknowme \
-  -e LIVEKIT_API_SECRET=uknowme123 \
+  -e LIVEKIT_WS_URL=wss://<LIVEKIT_CLOUD_PROJECT_URL> \
+  -e LIVEKIT_API_KEY=<LIVEKIT_CLOUD_API_KEY> \
+  -e LIVEKIT_API_SECRET=<LIVEKIT_CLOUD_API_SECRET> \
+  u-know-me-back:latest
+```
+
+예시:
+
+```bash
+docker run -d --name u-know-me-back \
+  -p 8888:8080 \
+  -e DB_PASSWORD=uknowme123! \
+  -e LIVEKIT_WS_URL=wss://example-abc123.livekit.cloud \
+  -e LIVEKIT_API_KEY=APIxxxxxxxx \
+  -e LIVEKIT_API_SECRET=SECRETxxxxxxxx \
   u-know-me-back:latest
 ```
 
@@ -139,7 +121,7 @@ Synology 기준 reverse proxy:
 - source: `https://uknowme.imoneleft.synology.me:443`
 - destination: `http://127.0.0.1:3000`
 
-프론트는 백엔드 REST/WebSocket을 `https://uknowme-back.imoneleft.synology.me` / `wss://uknowme-back.imoneleft.synology.me` 로 보고, 채팅 입장 시 백엔드가 내려준 `LIVEKIT_WS_URL` 로 LiveKit에 직접 붙습니다.
+프론트는 백엔드 REST/WebSocket을 `https://uknowme-back.imoneleft.synology.me` / `wss://uknowme-back.imoneleft.synology.me` 로 보고, 채팅 입장 시 백엔드가 내려준 `LIVEKIT_WS_URL` 로 LiveKit Cloud에 직접 붙습니다.
 
 ## 기존 방식
 
@@ -162,10 +144,11 @@ docker save -o u-know-me-back.tar u-know-me-back:latest
 ```bash
 docker load -i u-know-me-front.tar
 docker load -i u-know-me-back.tar
-docker load -i livekit-server.tar
 ```
 
 ## 참고
 
-- LiveKit 공식 문서 기준 `7880` 은 SSL 종료 가능한 reverse proxy/load balancer 뒤에 두는 포트이고, `7881` 은 UDP가 막혔을 때의 ICE/TCP fallback 포트입니다.
-- 최소 포트 구성은 `443/tcp + 7881/tcp` 기준의 타협안입니다. 더 안정적인 운영을 원하면 공식 문서의 UDP/TURN 설정까지 확장하는 편이 좋습니다.
+- LiveKit Cloud를 쓰면 별도 `livekit-server` 컨테이너를 운영하지 않아도 됩니다.
+- 프론트는 LiveKit secret을 직접 들고 있지 않고, 백엔드가 `/session` 에서 participant token을 발급합니다.
+- LiveKit Cloud quota가 모두 소진되면 프론트에서 `혼자 해보기` 모달을 띄우도록 구현되어 있습니다.
+- self-hosted LiveKit을 다시 쓰려면 별도 포트/TURN/TLS 구성을 다시 잡아야 합니다.
