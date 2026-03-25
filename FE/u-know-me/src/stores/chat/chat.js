@@ -131,6 +131,38 @@ export const useChatStore = defineStore('chat', {
 
       return element;
     },
+    findAvatarCanvasElement() {
+      const matchingRoom = String(useMainStore().option.matchingRoom || "");
+      const candidateIds = [
+        `avatarCanvas${matchingRoom}`,
+        "avatarCanvas1",
+        "avatarCanvas2",
+      ];
+
+      for (const canvasId of candidateIds) {
+        const canvas = document.getElementById(canvasId);
+        if (canvas) {
+          return canvas;
+        }
+      }
+
+      return document.querySelector('#my-video canvas[id^="avatarCanvas"]');
+    },
+    async waitForAvatarCanvas(timeoutMs = 3000, intervalMs = 16) {
+      const startedAt = Date.now();
+      let avatarCanvas = this.findAvatarCanvasElement();
+
+      while (!avatarCanvas && Date.now() - startedAt < timeoutMs) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        avatarCanvas = this.findAvatarCanvasElement();
+      }
+
+      if (!avatarCanvas) {
+        throw new Error("아바타 캔버스를 찾을 수 없습니다.");
+      }
+
+      return avatarCanvas;
+    },
     setLoadingState(progress, text) {
       this.loadingProgress = Math.max(0, Math.min(100, Math.round(progress)));
 
@@ -961,10 +993,7 @@ export const useChatStore = defineStore('chat', {
       ////////////////////////
 
       // capture
-      const avatarCanvas = await this.waitForDomElement(
-        "avatarCanvas" + useMainStore().option.matchingRoom,
-        { by: "id" }
-      );
+      const avatarCanvas = await this.waitForAvatarCanvas();
       this.logDebug("startHolistic:avatarCanvasReady", {
         canvasId: avatarCanvas.id,
         width: avatarCanvas.width,
