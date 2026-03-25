@@ -1,12 +1,11 @@
 import { defineStore } from 'pinia'
+import { markRaw } from 'vue'
 import * as THREE from "three";
 import * as GLTF from "three/examples/jsm/loaders/GLTFLoader";
 import * as OrbitControls from "three/examples/jsm/controls/OrbitControls";
 import * as VRMUtils from "@pixiv/three-vrm";
 import * as Kalidokit from "kalidokit";
-import * as Holistic from "@mediapipe/holistic";
 import * as DrawConnectors from "@mediapipe/drawing_utils";
-import * as Camera from "@mediapipe/camera_utils";
 import { useMainStore } from '../main/main';
 import { useAccountStore } from '../land/account';
 import { buildBackendWsUrl, buildFrontendUrl } from '@/config/runtime'
@@ -17,6 +16,29 @@ import axios from 'axios'
 
 
 let currentVrm;
+let tasksVisionFilesetPromise;
+let tasksVisionModulePromise;
+let trackingFrameHandler = null;
+
+const PUBLIC_BASE_URL = (process.env.BASE_URL || "/").replace(/\/+$/, "");
+const buildPublicAssetUrl = (assetPath) =>
+  `${PUBLIC_BASE_URL}/${assetPath}`.replace(/\/{2,}/g, "/");
+
+const TASKS_VISION_WASM_URL = buildPublicAssetUrl("mediapipe/wasm");
+const TASKS_VISION_MODULE_URL = buildPublicAssetUrl("mediapipe/vision_bundle.mjs");
+const HOLISTIC_LANDMARKER_MODEL_URL = buildPublicAssetUrl(
+  "mediapipe/models/holistic_landmarker.task"
+);
+
+const loadTasksVisionModule = async () => {
+  if (!tasksVisionModulePromise) {
+    tasksVisionModulePromise = import(
+      /* webpackIgnore: true */ TASKS_VISION_MODULE_URL
+    );
+  }
+
+  return tasksVisionModulePromise;
+};
 
 export const useChatStore = defineStore('chat', {
   state: () => ({
@@ -24,6 +46,9 @@ export const useChatStore = defineStore('chat', {
     gameBtn: 0,
     loading: 1,
     loadingText: "로딩중",
+    loadingProgress: 0,
+    motionFaceCount: 0,
+    motionPoseCount: 0,
     webSocket: null,
     room: undefined,
     participantToken: '',
@@ -32,6 +57,12 @@ export const useChatStore = defineStore('chat', {
     localAudioTrack: null,
     camera: null,
     holistic: null,
+    holisticDelegate: '',
+    holisticFallbackAttempted: false,
+    holisticEmptyFaceFrames: 0,
+    holisticFrameInFlight: false,
+    lastHolisticVideoTime: -1,
+    holisticTrackingLogged: false,
     avatarRenderer: null,
     avatarScene: null,
     avatarOrbitControls: null,
@@ -49,11 +80,64 @@ export const useChatStore = defineStore('chat', {
     leavingSession: false,
     soloMode: false,
     liveKitQuotaModal: false,
+    debugMessages: [],
   }),
   getters: {
 
   },
   actions: {
+    logDebug(stage, details = {}) {
+      const entry = {
+        at: new Date().toISOString(),
+        stage,
+        details,
+      };
+
+      this.debugMessages.push(entry);
+      if (this.debugMessages.length > 200) {
+        this.debugMessages.shift();
+      }
+
+      if (typeof window !== "undefined") {
+        window.__UKM_CHAT_DEBUG__ = this.debugMessages.slice();
+      }
+
+      console.log("[UKM-CHAT]", stage, details);
+    },
+    async waitForDomElement(selector, options = {}) {
+      const {
+        by = "query",
+        timeoutMs = 2000,
+        intervalMs = 16,
+      } = options;
+
+      const findElement = () =>
+        by === "id"
+          ? document.getElementById(selector)
+          : document.querySelector(selector);
+
+      const startedAt = Date.now();
+      let element = findElement();
+
+      while (!element && Date.now() - startedAt < timeoutMs) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        element = findElement();
+      }
+
+      if (!element) {
+        const target = by === "id" ? `id="${selector}"` : `selector "${selector}"`;
+        throw new Error(`필수 DOM 요소(${target})를 찾을 수 없습니다.`);
+      }
+
+      return element;
+    },
+    setLoadingState(progress, text) {
+      this.loadingProgress = Math.max(0, Math.min(100, Math.round(progress)));
+
+      if (text) {
+        this.loadingText = text;
+      }
+    },
     resetSessionUiState() {
       this.otherPeople = [];
       this.heartRainFlag = false;
@@ -61,6 +145,15 @@ export const useChatStore = defineStore('chat', {
       this.mobile = false;
       this.accuseBtn = 0;
       this.gameBtn = 0;
+      this.loadingProgress = 0;
+      this.debugMessages = [];
+      this.motionFaceCount = 0;
+      this.motionPoseCount = 0;
+      this.holisticTrackingLogged = false;
+
+      if (typeof window !== "undefined") {
+        window.__UKM_CHAT_DEBUG__ = [];
+      }
     },
 
     getTime() {
@@ -110,6 +203,14 @@ export const useChatStore = defineStore('chat', {
         }
         this.holistic = null;
       }
+      this.holisticDelegate = '';
+      this.holisticFallbackAttempted = false;
+      this.holisticEmptyFaceFrames = 0;
+      this.holisticFrameInFlight = false;
+      this.lastHolisticVideoTime = -1;
+      this.holisticTrackingLogged = false;
+      this.motionFaceCount = 0;
+      this.motionPoseCount = 0;
 
       if (stopCamera && this.camera) {
         try {
@@ -135,21 +236,218 @@ export const useChatStore = defineStore('chat', {
 
       this.avatarScene = null;
       this.ready = false;
+      trackingFrameHandler = null;
     },
-    createTrackingCamera(videoElement) {
-      return new Camera.Camera(videoElement, {
-        onFrame: async () => {
-          if (this.holistic) {
-            await this.holistic.send({ image: videoElement });
-          }
+    createTrackingCamera(videoElement, frameHandler) {
+      let mediaStream = null;
+      let animationFrameId = null;
+      let active = false;
+
+      const tick = async () => {
+        if (!active) {
+          return;
+        }
+
+        if (frameHandler) {
+          await frameHandler();
+        }
+
+        animationFrameId = window.requestAnimationFrame(tick);
+      };
+
+      return {
+        start: async () => {
+          active = true;
+          this.prepareVideoElement(videoElement);
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              width: 640,
+              height: 480,
+              facingMode: "user",
+            },
+          });
+          videoElement.srcObject = mediaStream;
+          await videoElement.play();
+          animationFrameId = window.requestAnimationFrame(tick);
         },
-        width: 640,
-        height: 480,
+        stop: () => {
+          active = false;
+          if (animationFrameId) {
+            window.cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+          }
+
+          const tracks =
+            videoElement?.srcObject?.getTracks?.() ||
+            mediaStream?.getTracks?.() ||
+            [];
+          tracks.forEach((track) => track.stop());
+          if (videoElement) {
+            videoElement.srcObject = null;
+          }
+          mediaStream = null;
+        },
+      };
+    },
+    createPassiveCamera(videoElement) {
+      return this.createTrackingCamera(videoElement, null);
+    },
+    prepareVideoElement(videoElement, options = {}) {
+      if (!videoElement) {
+        return;
+      }
+
+      const { muted = true } = options;
+
+      videoElement.autoplay = true;
+      videoElement.playsInline = true;
+      videoElement.muted = muted;
+      videoElement.defaultMuted = muted;
+      videoElement.setAttribute("autoplay", "");
+      videoElement.setAttribute("playsinline", "");
+      if (muted) {
+        videoElement.setAttribute("muted", "");
+      } else {
+        videoElement.removeAttribute("muted");
+      }
+    },
+    async waitForVideoReady(videoElement, timeoutMs = 5000) {
+      if (!videoElement) {
+        throw new Error("비디오 요소가 존재하지 않습니다.");
+      }
+
+      if (videoElement.readyState >= 2 && videoElement.videoWidth > 0) {
+        return;
+      }
+
+      await new Promise((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => {
+          cleanup();
+          reject(new Error("카메라 비디오 준비가 지연되고 있습니다."));
+        }, timeoutMs);
+
+        const handleReady = () => {
+          if (videoElement.readyState >= 2 && videoElement.videoWidth > 0) {
+            cleanup();
+            resolve();
+          }
+        };
+
+        const cleanup = () => {
+          window.clearTimeout(timeoutId);
+          videoElement.removeEventListener("loadedmetadata", handleReady);
+          videoElement.removeEventListener("loadeddata", handleReady);
+          videoElement.removeEventListener("canplay", handleReady);
+          videoElement.removeEventListener("playing", handleReady);
+        };
+
+        videoElement.addEventListener("loadedmetadata", handleReady);
+        videoElement.addEventListener("loadeddata", handleReady);
+        videoElement.addEventListener("canplay", handleReady);
+        videoElement.addEventListener("playing", handleReady);
+        handleReady();
       });
+    },
+    getPreferredHolisticDelegate() {
+      return "CPU";
+    },
+    async ensureHolisticLandmarker(
+      delegate = this.getPreferredHolisticDelegate(),
+      canvas = null,
+      options = {}
+    ) {
+      const { forceRecreate = false } = options;
+      this.logDebug("ensureHolisticLandmarker:start", {
+        requestedDelegate: delegate,
+        hasCanvas: Boolean(canvas),
+        forceRecreate,
+      });
+
+      if (!forceRecreate && this.holistic && this.holisticDelegate === delegate) {
+        this.logDebug("ensureHolisticLandmarker:reuse", {
+          delegate,
+          hasCanvas: Boolean(canvas),
+        });
+        return this.holistic;
+      }
+
+      if (this.holistic) {
+        try {
+          this.holistic.close();
+        } catch (error) {
+          console.warn("기존 HolisticLandmarker 종료 중 오류가 발생했습니다.", error);
+        }
+        this.holistic = null;
+      }
+
+      this.loadingText = `모션 모델 초기화 중..<br>${delegate}`;
+      this.setLoadingState(delegate === "GPU" ? 45 : 55);
+
+      this.logDebug("ensureHolisticLandmarker:moduleImport");
+      const { FilesetResolver, HolisticLandmarker } = await loadTasksVisionModule();
+      this.logDebug("ensureHolisticLandmarker:moduleImportDone");
+
+      if (!tasksVisionFilesetPromise) {
+        this.logDebug("ensureHolisticLandmarker:filesetCreate", {
+          wasmUrl: TASKS_VISION_WASM_URL,
+        });
+        tasksVisionFilesetPromise = FilesetResolver.forVisionTasks(
+          TASKS_VISION_WASM_URL
+        );
+      }
+
+      const wasmFileset = await tasksVisionFilesetPromise;
+      const resolvedDelegate =
+        delegate === "GPU" && !canvas
+          ? "CPU"
+          : delegate;
+
+      this.logDebug("ensureHolisticLandmarker:filesetReady", {
+        resolvedDelegate,
+      });
+
+      this.logDebug("ensureHolisticLandmarker:createFromOptions", {
+        resolvedDelegate,
+        modelAssetPath: HOLISTIC_LANDMARKER_MODEL_URL,
+        hasCanvas: Boolean(canvas),
+      });
+      this.holistic = markRaw(await HolisticLandmarker.createFromOptions(wasmFileset, {
+        baseOptions: {
+          modelAssetPath: HOLISTIC_LANDMARKER_MODEL_URL,
+          delegate: resolvedDelegate,
+        },
+        ...(resolvedDelegate === "GPU" && canvas ? { canvas } : {}),
+        runningMode: "VIDEO",
+        minFaceDetectionConfidence: 0.6,
+        minFacePresenceConfidence: 0.6,
+        minPoseDetectionConfidence: 0.6,
+        minPosePresenceConfidence: 0.6,
+        minHandLandmarksConfidence: 0.6,
+        outputFaceBlendshapes: false,
+        outputPoseSegmentationMasks: false,
+      }));
+      this.logDebug("ensureHolisticLandmarker:createFromOptionsDone", {
+        resolvedDelegate,
+      });
+
+      this.holisticDelegate = resolvedDelegate;
+      this.holisticFallbackAttempted = resolvedDelegate === "CPU";
+      this.holisticEmptyFaceFrames = 0;
+      this.holisticFrameInFlight = false;
+      this.lastHolisticVideoTime = -1;
+      this.holisticTrackingLogged = false;
+
+      return this.holistic;
     },
     avatarLoad(id) {
       console.log("1. 아바타 로드 시작");
+      this.logDebug("avatarLoad:start", {
+        avatarId: id,
+        matchingRoom: useMainStore().option.matchingRoom,
+      });
       this.cleanupAvatarPipeline();
+      this.setLoadingState(5, "아바타 모델 불러오는 중..");
 
       //three
       const scene = new THREE.Scene();
@@ -158,7 +456,15 @@ export const useChatStore = defineStore('chat', {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.domElement.id = "avatarCanvas" + useMainStore().option.matchingRoom;
 
-      document.getElementById("my-video").prepend(renderer.domElement);
+      const myVideoContainer = document.getElementById("my-video");
+      if (!myVideoContainer) {
+        throw new Error("아바타 렌더 컨테이너를 찾을 수 없습니다.");
+      }
+      this.logDebug("avatarLoad:containerReady", {
+        containerId: "my-video",
+      });
+
+      myVideoContainer.prepend(renderer.domElement);
 
       // camera
       const orbitCamera = new THREE.PerspectiveCamera(
@@ -183,9 +489,9 @@ export const useChatStore = defineStore('chat', {
       orbitControls.maxPolarAngle = 2.5;
       orbitControls.minAzimuthAngle = -1;
       orbitControls.maxAzimuthAngle = 1;
-      this.avatarRenderer = renderer;
-      this.avatarScene = scene;
-      this.avatarOrbitControls = orbitControls;
+      this.avatarRenderer = markRaw(renderer);
+      this.avatarScene = markRaw(scene);
+      this.avatarOrbitControls = markRaw(orbitControls);
 
       // light
       const light = new THREE.DirectionalLight(0xffffff);
@@ -213,65 +519,82 @@ export const useChatStore = defineStore('chat', {
       loader.crossOrigin = "anonymous";
 
       // Import model from URL, add your own model here
-      loader.load(
-        // "https://cdn.glitch.com/29e07830-2317-4b15-a044-135e73c7f840%2FAshtra.vrm?v=1630342336981",
-        "vrm/" + id + ".vrm",
+      return new Promise((resolve, reject) => {
+        loader.load(
+          "vrm/" + id + ".vrm",
 
-        (gltf) => {
-          VRMUtils.VRMUtils.removeUnnecessaryJoints(gltf.scene);
-
-          VRMUtils.VRM.from(gltf).then((vrm) => {
-
-            vrm.humanoid.setPose({
-              [VRMUtils.VRMSchema.HumanoidBoneName.LeftShoulder]: {
-                rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.0, 0.0, 0.2)).toArray()
-              },
-              [VRMUtils.VRMSchema.HumanoidBoneName.RightShoulder]: {
-                rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.0, 0.0, -0.2)).toArray()
-              },
-              [VRMUtils.VRMSchema.HumanoidBoneName.LeftUpperArm]: {
-                rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.0, 0.15, 1.1)).toArray()
-              },
-              [VRMUtils.VRMSchema.HumanoidBoneName.RightUpperArm]: {
-                rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.0, -0.15, -1.1)).toArray()
-              },
-              [VRMUtils.VRMSchema.HumanoidBoneName.LeftLowerArm]: {
-                rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.3, 0.3, 0.7)).toArray()
-              },
-              [VRMUtils.VRMSchema.HumanoidBoneName.RightLowerArm]: {
-                rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.3, -0.3, -0.7)).toArray()
-              },
+          async (gltf) => {
+            this.logDebug("avatarLoad:gltfLoaded", {
+              avatarId: id,
             });
+            VRMUtils.VRMUtils.removeUnnecessaryJoints(gltf.scene);
 
-            scene.add(vrm.scene);
-            currentVrm = vrm;
-            currentVrm.scene.rotation.y = Math.PI; // Rotate model 180deg to face camera
-          });
-        },
+            try {
+              const vrm = await VRMUtils.VRM.from(gltf);
 
-        (progress) =>
-          console.log(
-            "Loading model...",
-            100.0 * (progress.loaded / progress.total),
-            "%"
-          ),
-        (error) => console.error(error)
-      );
-      console.log("2. 아바타 로드 완료");
+              vrm.humanoid.setPose({
+                [VRMUtils.VRMSchema.HumanoidBoneName.LeftShoulder]: {
+                  rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.0, 0.0, 0.2)).toArray()
+                },
+                [VRMUtils.VRMSchema.HumanoidBoneName.RightShoulder]: {
+                  rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.0, 0.0, -0.2)).toArray()
+                },
+                [VRMUtils.VRMSchema.HumanoidBoneName.LeftUpperArm]: {
+                  rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.0, 0.15, 1.1)).toArray()
+                },
+                [VRMUtils.VRMSchema.HumanoidBoneName.RightUpperArm]: {
+                  rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.0, -0.15, -1.1)).toArray()
+                },
+                [VRMUtils.VRMSchema.HumanoidBoneName.LeftLowerArm]: {
+                  rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.3, 0.3, 0.7)).toArray()
+                },
+                [VRMUtils.VRMSchema.HumanoidBoneName.RightLowerArm]: {
+                  rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.3, -0.3, -0.7)).toArray()
+                },
+              });
+
+              scene.add(vrm.scene);
+              currentVrm = vrm;
+              currentVrm.scene.rotation.y = Math.PI;
+              this.logDebug("avatarLoad:vrmReady", {
+                avatarId: id,
+              });
+              console.log("2. 아바타 로드 완료");
+              resolve(vrm);
+            } catch (error) {
+              console.error(error);
+              reject(error);
+            }
+          },
+
+          (progress) => {
+            const ratio = progress.total
+              ? progress.loaded / progress.total
+              : 0;
+            this.setLoadingState(
+              5 + ratio * 35,
+              `아바타 모델 불러오는 중..<br>${Math.round(ratio * 100)}%`
+            );
+            console.log(
+              "Loading model...",
+              100.0 * ratio,
+              "%"
+            );
+          },
+          (error) => {
+            console.error(error);
+            reject(error);
+          }
+        );
+      });
     },
 
-    startHolistic() {
+    async startHolistic() {
       console.log("3. Holistic 로드 시작");
+      this.logDebug("startHolistic:start", {
+        matchingRoom: useMainStore().option.matchingRoom,
+      });
       this.ready = false;
-
-      if (this.holistic) {
-        try {
-          this.holistic.close();
-        } catch (error) {
-          console.warn("기존 Holistic 종료 중 오류가 발생했습니다.", error);
-        }
-        this.holistic = null;
-      }
 
       if (this.camera) {
         try {
@@ -465,40 +788,31 @@ export const useChatStore = defineStore('chat', {
         }
       };
 
-      /* SETUP MEDIAPIPE HOLISTIC INSTANCE */
-      let videoElement = document.querySelector(".input_video"),
-        guideCanvas = document.querySelector("canvas.guides");
-
-      const onResults = (results) => {
-        // Draw landmark guides
-        drawResults(results);
-        // Animate model
-        animateVRM(currentVrm, results);
-      };
-
-      const holistic = new Holistic.Holistic({
-        locateFile: (file) => {
-          if(file == "pose_landmark_full.tflite"){
-            this.ready = true;
-          }
-          this.loadingText = "불러오는 중..<br>"+file;
-          // return './holistic/' + file;
-          return `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`;
-        },
+      /* SETUP HOLISTIC LANDMARKER INSTANCE */
+      let videoElement = await this.waitForDomElement(".input_video"),
+        guideCanvas = await this.waitForDomElement("canvas.guides");
+      const inputVideoAlt = document.querySelector(".input_video2");
+      this.prepareVideoElement(videoElement);
+      this.prepareVideoElement(inputVideoAlt);
+      this.logDebug("startHolistic:domReady", {
+        videoClass: "input_video",
+        guideCanvasClass: "guides",
       });
 
-      holistic.setOptions({
-        modelComplexity: 1,
-        smoothLandmarks: true,
-        minDetectionConfidence: 0.7,
-        minTrackingConfidence: 0.7,
-        refineFaceLandmarks: true,
+      const normalizeHolisticResult = (result) => ({
+        faceLandmarks: result.faceLandmarks?.[0] || null,
+        poseLandmarks: result.poseLandmarks?.[0] || null,
+        ea: result.poseWorldLandmarks?.[0] || null,
+        leftHandLandmarks: result.leftHandLandmarks?.[0] || null,
+        rightHandLandmarks: result.rightHandLandmarks?.[0] || null,
       });
-      // Pass holistic a callback function
-      holistic.onResults(onResults);
-      this.holistic = holistic;
+      let firstHolisticFrameLogged = false;
 
       const drawResults = (results) => {
+        if (!guideCanvas || !videoElement) {
+          return;
+        }
+
         guideCanvas.width = videoElement.videoWidth;
         guideCanvas.height = videoElement.videoHeight;
         let canvasCtx = guideCanvas.getContext("2d");
@@ -509,7 +823,7 @@ export const useChatStore = defineStore('chat', {
           color: "#ff0364",
           lineWidth: 2,
         });
-        if (results.faceLandmarks && results.faceLandmarks.length === 478) {
+        if (results.faceLandmarks && results.faceLandmarks.length >= 473) {
           //draw pupils
           DrawConnectors.drawLandmarks(canvasCtx, [results.faceLandmarks[468], results.faceLandmarks[468 + 5]], {
             color: "#ffe603",
@@ -524,29 +838,163 @@ export const useChatStore = defineStore('chat', {
           color: "#ff0364",
           lineWidth: 2,
         });
+        canvasCtx.restore();
       };
 
+      const processHolisticFrame = async () => {
+        if (!videoElement || videoElement.readyState < 2 || !this.holistic) {
+          return;
+        }
+
+        const currentVideoTime = videoElement.currentTime;
+        if (this.holisticFrameInFlight || currentVideoTime === this.lastHolisticVideoTime) {
+          return;
+        }
+
+        let result;
+        this.holisticFrameInFlight = true;
+        try {
+          this.lastHolisticVideoTime = currentVideoTime;
+          result = this.holistic.detectForVideo(videoElement, performance.now());
+        } catch (error) {
+          const message = error?.message || "";
+          if (!message.includes("runningMode")) {
+            this.holisticFrameInFlight = false;
+            throw error;
+          }
+
+          console.warn("HolisticLandmarker VIDEO 프레임을 다음 루프에서 다시 시도합니다.", error);
+          this.logDebug("startHolistic:runningModeRetry", {
+            currentVideoTime,
+            delegate: this.holisticDelegate || preferredDelegate,
+          });
+          this.lastHolisticVideoTime = -1;
+          this.holisticFrameInFlight = false;
+          return;
+        }
+        try {
+          const normalizedResult = normalizeHolisticResult(result);
+          this.motionFaceCount = normalizedResult.faceLandmarks?.length || 0;
+          this.motionPoseCount = normalizedResult.poseLandmarks?.length || 0;
+          if (!firstHolisticFrameLogged) {
+            firstHolisticFrameLogged = true;
+            this.logDebug("startHolistic:firstDetectSuccess", {
+              readyState: videoElement.readyState,
+              videoWidth: videoElement.videoWidth,
+              videoHeight: videoElement.videoHeight,
+              faceCount: this.motionFaceCount,
+              poseCount: this.motionPoseCount,
+            });
+          }
+
+          if (
+            !this.holisticTrackingLogged &&
+            (this.motionFaceCount > 0 || this.motionPoseCount > 0)
+          ) {
+            this.holisticTrackingLogged = true;
+            this.logDebug("startHolistic:trackingDetected", {
+              faceCount: this.motionFaceCount,
+              poseCount: this.motionPoseCount,
+            });
+          }
+
+          drawResults(normalizedResult);
+          animateVRM(currentVrm, normalizedResult);
+
+          if (normalizedResult.faceLandmarks?.length) {
+            this.holisticEmptyFaceFrames = 0;
+            return;
+          }
+
+          this.holisticEmptyFaceFrames += 1;
+
+          if (
+            this.holisticDelegate === "GPU" &&
+            !this.holisticFallbackAttempted &&
+            this.holisticEmptyFaceFrames >= 20 &&
+            /Android/i.test(navigator.userAgent || "")
+          ) {
+            console.warn("GPU HolisticLandmarker에서 얼굴 인식이 불안정해 CPU delegate로 전환합니다.");
+            this.holisticFallbackAttempted = true;
+            await this.ensureHolisticLandmarker("CPU");
+          }
+        } finally {
+          this.holisticFrameInFlight = false;
+        }
+      };
+      trackingFrameHandler = processHolisticFrame;
+
+      const preferredDelegate = this.getPreferredHolisticDelegate();
+      this.logDebug("startHolistic:preferredDelegate", {
+        preferredDelegate,
+      });
+
+      try {
+        await this.ensureHolisticLandmarker(preferredDelegate, guideCanvas);
+      } catch (error) {
+        if (preferredDelegate === "GPU") {
+          console.warn("GPU HolisticLandmarker 초기화에 실패해 CPU delegate로 재시도합니다.", error);
+          this.setLoadingState(55, "모션 모델 초기화 재시도 중..<br>CPU");
+          await this.ensureHolisticLandmarker("CPU");
+        } else {
+          throw error;
+        }
+      }
+
       // Use `Mediapipe` utils to get camera - lower resolution = higher fps
-      this.camera = this.createTrackingCamera(videoElement);
-      this.camera.start();
+      this.setLoadingState(70, "카메라 초기화 중..");
+      this.logDebug("startHolistic:cameraCreate");
+      this.camera = this.createTrackingCamera(videoElement, processHolisticFrame);
+      await Promise.resolve(this.camera.start());
+      await this.waitForVideoReady(videoElement);
+      try {
+        await videoElement.play();
+      } catch (error) {
+        console.warn("카메라 프리뷰 재생 요청에 실패했습니다.", error);
+      }
+      this.logDebug("startHolistic:cameraStarted", {
+        readyState: videoElement.readyState,
+        videoWidth: videoElement.videoWidth,
+        videoHeight: videoElement.videoHeight,
+      });
+      this.ready = true;
       ////////////////////////
 
       // capture
-      const avatarCanvas = document.getElementById(
-        "avatarCanvas" + useMainStore().option.matchingRoom
+      const avatarCanvas = await this.waitForDomElement(
+        "avatarCanvas" + useMainStore().option.matchingRoom,
+        { by: "id" }
       );
+      this.logDebug("startHolistic:avatarCanvasReady", {
+        canvasId: avatarCanvas.id,
+        width: avatarCanvas.width,
+        height: avatarCanvas.height,
+      });
       avatarCanvas.style.display = "inline-block";
 
-      const testVideo = document.getElementById("test-video");
+      const testVideo = await this.waitForDomElement("test-video", { by: "id" });
+      this.prepareVideoElement(testVideo);
+      this.logDebug("startHolistic:testVideoReady", {
+        testVideoId: "test-video",
+      });
       if (testVideo.srcObject) {
         const tracks = testVideo.srcObject.getTracks?.() || [];
         tracks.forEach((track) => track.stop());
       }
       testVideo.srcObject = avatarCanvas.captureStream();
+      try {
+        await testVideo.play();
+      } catch (error) {
+        console.warn("아바타 캡처 비디오 재생 요청에 실패했습니다.", error);
+      }
+      this.logDebug("startHolistic:captureStreamReady", {
+        trackCount: testVideo.srcObject?.getVideoTracks?.().length || 0,
+      });
 
       var avatarVideo = testVideo.srcObject.getVideoTracks()[0];
 
       console.log("4. Holistic 로드 완료");
+      this.setLoadingState(85, "모션 인식 준비 완료");
 
       return avatarVideo;
     },
@@ -778,28 +1226,35 @@ export const useChatStore = defineStore('chat', {
       }
 
       this.camera.stop();
+      const inputVideo = document.querySelector(".input_video");
+      const inputVideoAlt = document.querySelector(".input_video2");
+
+      if (!inputVideo || !inputVideoAlt) {
+        console.warn("모션 인식 비디오 요소를 찾을 수 없습니다.");
+        return;
+      }
+
       let videoElement;
 
       if (this.motionCheck == true) {
         this.motionCheck = false;
         this.systemMessagePrint("모션인식을 중지합니다.")
-        document.querySelector(".input_video").style.display = "none";
-        document.querySelector(".input_video2").style.display = "block";
-        videoElement = document.querySelector(".input_video2");
+        inputVideo.style.display = "none";
+        inputVideoAlt.style.display = "block";
+        this.prepareVideoElement(inputVideoAlt);
+        videoElement = inputVideoAlt;
       } else {
         this.motionCheck = true;
         this.systemMessagePrint("모션인식을 재시작합니다.")
-        document.querySelector(".input_video").style.display = "block";
-        document.querySelector(".input_video2").style.display = "none";
-        videoElement = document.querySelector(".input_video");
+        inputVideo.style.display = "block";
+        inputVideoAlt.style.display = "none";
+        this.prepareVideoElement(inputVideo);
+        videoElement = inputVideo;
       }
 
       this.camera = this.motionCheck
-        ? this.createTrackingCamera(videoElement)
-        : new Camera.Camera(videoElement, {
-            width: 640,
-            height: 480,
-          });
+        ? this.createTrackingCamera(videoElement, trackingFrameHandler)
+        : this.createPassiveCamera(videoElement);
       this.camera.start();
     },
 
@@ -844,13 +1299,15 @@ export const useChatStore = defineStore('chat', {
       } else {
         videoElement = document.querySelector(".my-real-video" + useMainStore().option.matchingRoom);
       }
+      if (!videoElement) {
+        console.warn("실제 카메라 비디오 요소를 찾을 수 없습니다.");
+        return;
+      }
+      this.prepareVideoElement(videoElement);
       videoElement.style.display = "block";
 
       this.cleanupAvatarPipeline();
-      this.camera = new Camera.Camera(videoElement, {
-        width: 640,
-        height: 480,
-      });
+      this.camera = this.createPassiveCamera(videoElement);
       this.camera.start();
 
       if (!this.room || this.soloMode) {

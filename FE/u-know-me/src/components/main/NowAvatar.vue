@@ -1,13 +1,13 @@
 <template>
   <div>
-    <div id="progress">
+    <div id="progress" v-show="avatarFun.avatarLoading">
       <progress
         id="progressTag"
         :value="avatarFun.avatarProgress"
         max="100"
       ></progress>
       <div class="loading">
-        <span>LOADING</span>
+        <span>LOADING {{ avatarProgressLabel }}</span>
       </div>
     </div>
 
@@ -16,7 +16,7 @@
 </template>
 
 <script>
-import { onBeforeUnmount, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useAvatarStore } from "@/stores/main/avatar";
 import { useAccountStore } from "@/stores/land/account";
 
@@ -24,30 +24,47 @@ export default {
   setup() {
     const avatarFun = useAvatarStore();
     const account = useAccountStore();
+    const mounted = ref(false);
+    let lastLoadedAvatarSeq = null;
+
+    const loadAvatar = async (avatarSeq) => {
+      if (!avatarSeq || !mounted.value || avatarSeq === lastLoadedAvatarSeq) {
+        return;
+      }
+
+      await nextTick();
+      lastLoadedAvatarSeq = avatarSeq;
+      avatarFun.load(avatarSeq, { persist: false });
+    };
 
     const stopWatchingAvatar = watch(
       () => account.currentUser.avatar?.seq,
       (avatarSeq) => {
-        if (!avatarSeq) {
-          return;
-        }
-
-        const progressElement = document.getElementById("progress");
-        if (progressElement) {
-          progressElement.style.display = "block";
-        }
-
-        avatarFun.load(avatarSeq, { persist: false });
-      },
-      { immediate: true }
+        loadAvatar(avatarSeq);
+      }
     );
+
+    onMounted(async () => {
+      mounted.value = true;
+
+      if (!account.currentUser.avatar?.seq) {
+        await account.fetchCurrentUser();
+      }
+
+      await loadAvatar(account.currentUser.avatar?.seq);
+    });
 
     onBeforeUnmount(() => {
       stopWatchingAvatar();
+      mounted.value = false;
+      lastLoadedAvatarSeq = null;
       avatarFun.clearRenderer();
     });
 
-    return { avatarFun };
+    return {
+      avatarFun,
+      avatarProgressLabel: computed(() => `${Math.round(avatarFun.avatarProgress)}%`),
+    };
   },
 };
 </script>

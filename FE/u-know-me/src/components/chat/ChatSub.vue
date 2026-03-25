@@ -196,9 +196,14 @@ export default {
     onMounted(() => {
       var chatSub = document.querySelector(".chat-sub");
       var chatSubMobile = document.querySelector(".chat-sub-mobile");
+      const renameAvatarCanvas = (fromId, toId) => {
+        const avatarCanvas = document.getElementById(fromId);
+        if (avatarCanvas) {
+          avatarCanvas.id = toId;
+        }
+      };
       setTimeout(() => {
         // 접속당시 width가 1120px 보다 작을 때,
-        console.log("window.innerWidth!!!", window.innerWidth);
         if (window.innerWidth < 1120) {
           chatSub.style.bottom = "-200px";
           chatSubMobile.style.left = "50%";
@@ -211,7 +216,7 @@ export default {
             document.documentElement.style.setProperty("--video-size", "1");
             chat.mobile = true;
 
-            document.getElementById("avatarCanvas1").id = "avatarCanvas2";
+            renameAvatarCanvas("avatarCanvas1", "avatarCanvas2");
           }
         }
       }, 2000);
@@ -230,7 +235,7 @@ export default {
             document.documentElement.style.setProperty("--video-size", "1");
             chat.mobile = true;
 
-            document.getElementById("avatarCanvas1").id = "avatarCanvas2";
+            renameAvatarCanvas("avatarCanvas1", "avatarCanvas2");
           }
         } else {
           chatSub.style.bottom = "0px";
@@ -243,7 +248,7 @@ export default {
             document.documentElement.style.setProperty("--video-size", "2");
             chat.mobile = false;
 
-            document.getElementById("avatarCanvas2").id = "avatarCanvas1";
+            renameAvatarCanvas("avatarCanvas2", "avatarCanvas1");
           }
         }
       };

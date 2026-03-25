@@ -18,27 +18,43 @@
               'my-real-video2':
                 main.option.matchingRoom == 2 || chat.mobile == true,
             }"
+            autoplay
+            muted
+            playsinline
             style="display: none"
           ></video>
           <video
             id="test-video"
             style="display: none"
             autoplay
-            controls
+            muted
+            playsinline
           ></video>
-          <div class="preview">
+          <div :class="['preview', { 'preview-solo': chat.soloMode }]">
             <video
               class="input_video"
+              autoplay
+              muted
+              playsinline
               style="position: absolute; left: 0%"
             ></video>
             <video
               class="input_video2"
+              autoplay
+              muted
+              playsinline
               style="position: absolute; left: 0%; display: none"
             ></video>
             <canvas
               class="guides"
               style="position: absolute; left: 0%"
             ></canvas>
+            <div
+              class="motion-status"
+              :class="{ active: chat.motionFaceCount > 0 || chat.motionPoseCount > 0 }"
+            >
+              {{ motionStatusText }}
+            </div>
           </div>
           <div>
             <p>{{ account.currentUser.nickname }}</p>
@@ -63,6 +79,7 @@
 <script>
 import axios from "axios";
 import { Room, RoomEvent, Track, createLocalAudioTrack } from "livekit-client";
+import { nextTick } from "vue";
 import UserVideo from "@/components/chat/UserVideo";
 import { useChatStore } from "@/stores/chat/chat";
 import { storeToRefs } from "pinia";
@@ -105,6 +122,19 @@ export default {
       chat,
       SessionName,
     };
+  },
+  computed: {
+    motionStatusText() {
+      if (!this.chat.motionCheck) {
+        return "모션 인식이 꺼져 있습니다";
+      }
+
+      if (this.chat.motionFaceCount > 0 || this.chat.motionPoseCount > 0) {
+        return `모션 인식 중 · 얼굴 ${this.chat.motionFaceCount} / 자세 ${this.chat.motionPoseCount}`;
+      }
+
+      return "얼굴을 카메라 중앙에 맞춰주세요";
+    },
   },
 
   data() {
@@ -153,41 +183,78 @@ export default {
   },
   methods: {
     async joinSession() {
-      await this.account.fetchCurrentUser();
-      this.chat.soloMode = this.$route.query.solo === "1";
-      this.chat.liveKitQuotaModal = false;
-      this.chat.getTime();
-      this.mySessionId = String(this.SessionName || "SessionA");
-      this.myUserName = this.account.currentUser.nickname;
-      if (!this.chat.soloMode) {
-        this.chat.socketConnect(this.account.currentUser.seq);
-      }
-      await this.chat.avatarLoad(this.account.currentUser.avatar.seq);
-      var avatarVideo = await this.chat.startHolistic();
-      this.readyIntervalId = window.setInterval(() => {
-        if (this.chat.ready) {
-          this.chat.loadingText = "안정화 중..";
-          setTimeout(() => {
-            if (this.chat.soloMode) {
-              this.chat.loading = 0;
-              this.chat.systemMessagePrint("혼자 해보기 모드입니다.");
-              return;
-            }
-
-            this.startLiveKit(avatarVideo);
-          }, 3000);
-          if (this.readyIntervalId) {
-            window.clearInterval(this.readyIntervalId);
-            this.readyIntervalId = null;
-          }
+      try {
+        this.chat.logDebug("joinSession:start", {
+          route: this.$route.fullPath,
+          sessionName: this.SessionName,
+        });
+        this.chat.loading = 1;
+        this.chat.setLoadingState(0, "사용자 정보를 확인하는 중..");
+        await this.account.fetchCurrentUser();
+        this.chat.logDebug("joinSession:userFetched", {
+          userSeq: this.account.currentUser.seq,
+          avatarSeq: this.account.currentUser.avatar?.seq,
+          nickname: this.account.currentUser.nickname,
+        });
+        await nextTick();
+        this.chat.soloMode = this.$route.query.solo === "1";
+        this.chat.liveKitQuotaModal = false;
+        this.chat.getTime();
+        this.mySessionId = String(this.SessionName || "SessionA");
+        this.myUserName = this.account.currentUser.nickname;
+        if (!this.chat.soloMode) {
+          this.chat.logDebug("joinSession:socketConnect", {
+            userSeq: this.account.currentUser.seq,
+          });
+          this.chat.socketConnect(this.account.currentUser.seq);
         }
-      }, 1000);
+        this.chat.setLoadingState(5, "아바타 장면을 준비하는 중..");
+        await this.chat.avatarLoad(this.account.currentUser.avatar.seq);
+        this.chat.logDebug("joinSession:avatarLoadCalled", {
+          avatarSeq: this.account.currentUser.avatar.seq,
+        });
+        await nextTick();
+        var avatarVideo = await this.chat.startHolistic();
+        this.chat.logDebug("joinSession:startHolisticDone", {
+          hasAvatarVideo: Boolean(avatarVideo),
+          avatarTrackReadyState: avatarVideo?.readyState,
+        });
+        this.readyIntervalId = window.setInterval(() => {
+          if (this.chat.ready) {
+            this.chat.logDebug("joinSession:readyIntervalSatisfied");
+            this.chat.setLoadingState(90, "안정화 중..");
+            setTimeout(() => {
+              if (this.chat.soloMode) {
+                this.chat.setLoadingState(100, "혼자 해보기 준비 완료");
+                this.chat.loading = 0;
+                this.chat.systemMessagePrint("혼자 해보기 모드입니다.");
+                return;
+              }
+
+              this.startLiveKit(avatarVideo);
+            }, 3000);
+            if (this.readyIntervalId) {
+              window.clearInterval(this.readyIntervalId);
+              this.readyIntervalId = null;
+            }
+          }
+        }, 1000);
+      } catch (error) {
+        this.chat.logDebug("joinSession:error", {
+          message: error?.message || String(error),
+          stack: error?.stack || null,
+        });
+        console.error("채팅 초기화 중 오류가 발생했습니다.", error);
+        this.chat.setLoadingState(0, "모션 인식 초기화에 실패했습니다.");
+        this.chat.loading = 0;
+      }
     },
 
     async startLiveKit(avatarVideo) {
       console.log("5. LiveKit 시작");
 
       try {
+        this.chat.setLoadingState(92, "채팅 세션에 연결하는 중..");
         const connection = await this.createParticipantToken(this.mySessionId);
         const room = new Room({
           adaptiveStream: true,
@@ -208,12 +275,14 @@ export default {
         });
         this.chat.localAudioTrack = audioPublication.track || audioTrack;
 
+        this.chat.setLoadingState(97, "아바타 비디오를 게시하는 중..");
         await this.chat.switchPublishedVideoTrack(avatarVideo, {
           stopPrevious: false,
           trackName: "avatar-camera",
         });
 
         this.syncRemoteParticipants();
+        this.chat.setLoadingState(100, "입장 완료");
         this.chat.loading = 0;
       } catch (error) {
         console.error("LiveKit 연결 중 오류가 발생했습니다.", error);
@@ -410,25 +479,50 @@ h1 {
 .preview {
   position: absolute;
   width: 30%;
-  height: auto;
+  aspect-ratio: 4 / 3;
   left: 5%;
   top: 5%;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: 20px;
+  background: rgba(8, 10, 23, 0.78);
+  box-shadow: 0px 14px 32px rgba(0, 0, 0, 0.28);
+}
+.preview.preview-solo {
+  width: min(260px, 42%);
+}
+.preview video,
+.preview .guides {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
   transform: rotateY(180deg);
   -webkit-transform: rotateY(180deg); /* Safari and Chrome */
   -moz-transform: rotateY(180deg); /* Firefox */
 }
-.preview video {
-  width: 100% !important;
-  height: auto;
-  border: 3px solid purple;
-  border-radius: 20px;
-  box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
-}
 .preview .guides {
-  width: 100% !important;
-  height: auto;
-  border: 3px solid rgba(0, 0, 0, 0);
-  border-radius: 20px;
+  border: 0;
+}
+.motion-status {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(11, 13, 29, 0.72);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  backdrop-filter: blur(8px);
+}
+.motion-status.active {
+  background: rgba(60, 28, 124, 0.78);
 }
 .nickName {
   height: 20px;

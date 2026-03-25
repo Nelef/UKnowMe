@@ -24,6 +24,7 @@ export const useAvatarStore = defineStore('avatar', {
       { id: 26, name: '도레미', image: require('@/assets/main/girl6.png') },
     ],
     avatarProgress: 0,
+    avatarLoading: false,
     renderer: null,
     orbitControls: null,
     orbitCamera: null,
@@ -39,6 +40,7 @@ export const useAvatarStore = defineStore('avatar', {
   },
   actions: {
     clearRenderer() {
+      this.avatarLoading = false;
       if (this.animationFrameId) {
         cancelAnimationFrame(this.animationFrameId);
         this.animationFrameId = null;
@@ -94,7 +96,16 @@ export const useAvatarStore = defineStore('avatar', {
       this.loadRequestId += 1;
       const loadRequestId = this.loadRequestId;
       this.avatarProgress = 0;
+      this.avatarLoading = true;
       this.clearRenderer();
+      this.avatarLoading = true;
+
+      const avatarContainer = document.getElementById("nowAvatarDiv");
+      if (!avatarContainer) {
+        console.warn("nowAvatarDiv를 찾지 못해 아바타 로드를 건너뜁니다.");
+        this.avatarLoading = false;
+        return;
+      }
 
       const scene = new THREE.Scene();
       const renderer = new THREE.WebGLRenderer({ alpha: true });
@@ -102,7 +113,7 @@ export const useAvatarStore = defineStore('avatar', {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.domElement.id = "nowAvatar";
 
-      document.getElementById("nowAvatarDiv").append(renderer.domElement);
+      avatarContainer.append(renderer.domElement);
 
       // camera
       const orbitCamera = new THREE.PerspectiveCamera(
@@ -212,6 +223,8 @@ export const useAvatarStore = defineStore('avatar', {
             vrm.lookAt.target = orbitCamera; // look camera
             vrm.blendShapeProxy.setValue(VRMUtils.VRMSchema.BlendShapePresetName.Fun, 0.3);
             vrm.blendShapeProxy.setValue(VRMUtils.VRMSchema.BlendShapePresetName.A, 0.4);
+            this.avatarProgress = 100;
+            this.avatarLoading = false;
           });
         },
 
@@ -224,18 +237,16 @@ export const useAvatarStore = defineStore('avatar', {
             progressElement.style.color = "#a056ff";
           }
 
-          this.avatarProgress = 100 * (progress.loaded / progress.total)
-          if (this.avatarProgress == 100) {
-            setTimeout(function () {
-              const element = document.getElementById("progress");
-              if (element) {
-                element.style.display = "none";
-              }
-            }, 1000);
-          }
+          this.avatarProgress = Math.min(
+            100,
+            Math.round(100 * (progress.loaded / progress.total))
+          )
         },
 
-        (error) => console.error(error)
+        (error) => {
+          this.avatarLoading = false;
+          console.error(error);
+        }
       )
 
       const blink = () => {

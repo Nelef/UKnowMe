@@ -3,3 +3,5 @@ BE/u-know-me/src/main/java/com/ssafy/uknowme/model/dto/MatchingDto/Matching1VS1R
 BE/u-know-me/src/main/java/com/ssafy/uknowme/model/dto/MatchingDto/Matching2VS2RequestDto.java
 BE/u-know-me/src/main/java/com/ssafy/uknowme/model/dto/MatchingDto/Matching1VS1RequestDto.java
 *.tar
+FE/u-know-me/.serve.out.log
+FE/u-know-me/.serve.err.log

@@ -5,6 +5,11 @@
       <div class="loading-text-title">
         <span>LOADING</span>
       </div>
+      <div class="loading-progress">
+        <div class="loading-progress-bar" :style="{ width: `${chat.loadingProgress}%` }"></div>
+      </div>
+      <div class="loading-progress-label">{{ chat.loadingProgress }}%</div>
+      <div class="loading-text" v-html="chat.loadingText"></div>
     </div>
   </div>
 </template>
@@ -86,6 +91,29 @@ loading-text-title span:nth-child(7) {
 .loading-text {
   margin-top: 52px;
   font-size: 20px;
+  color: white;
+}
+
+.loading-progress {
+  width: min(320px, 70vw);
+  height: 10px;
+  margin: 18px auto 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.loading-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #a056ff, #e2c6ff);
+  transition: width 0.2s ease;
+}
+
+.loading-progress-label {
+  margin-top: 10px;
+  font-size: 16px;
+  font-weight: 700;
   color: white;
 }
 </style>

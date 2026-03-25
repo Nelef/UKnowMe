@@ -25,10 +25,8 @@ export default {
   methods: {
     avatarSelect(avatar) {
       console.log(avatar);
-      const progressElement = document.getElementById("progress");
-      if (progressElement) {
-        progressElement.style.display = "block";
-      }
+      this.avatarFun.avatarLoading = true;
+      this.avatarFun.avatarProgress = 0;
       this.avatarFun.load(avatar.id);
     },
   },
