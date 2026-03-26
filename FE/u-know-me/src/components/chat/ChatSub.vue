@@ -201,7 +201,6 @@ export default {
     const keywordContentMobile = ref(null);
     let mediaViewContent = null;
     let viewChangeHandler = null;
-    let initialLayoutTimerId = null;
 
     onMounted(() => {
       nextTick(() => {
@@ -249,9 +248,7 @@ export default {
           }
         };
 
-        initialLayoutTimerId = window.setTimeout(() => {
-          applyResponsiveLayout(window.innerWidth < 1120);
-        }, 2000);
+        applyResponsiveLayout(window.innerWidth < 1120);
 
         mediaViewContent = window.matchMedia(`(max-width: 1120px)`);
         viewChangeHandler = (event) => {
@@ -262,10 +259,6 @@ export default {
     });
 
     onBeforeUnmount(() => {
-      if (initialLayoutTimerId) {
-        window.clearTimeout(initialLayoutTimerId);
-      }
-
       if (mediaViewContent && viewChangeHandler) {
         mediaViewContent.removeEventListener("change", viewChangeHandler);
       }

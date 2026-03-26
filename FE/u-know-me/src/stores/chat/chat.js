@@ -64,6 +64,50 @@ const getChatAvatarRenderSize = () =>
 const getChatRenderPixelRatio = () =>
   isAppleTouchDevice() ? 0.9 : CHAT_RENDER_PIXEL_RATIO;
 
+const getForcedMotionDelegate = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const delegate = window.localStorage.getItem("ukm-motion-delegate");
+  if (delegate === "GPU" || delegate === "CPU") {
+    return delegate;
+  }
+
+  return null;
+};
+
+const canCreateWebgl2Context = (canvas) => {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const probeCanvas = canvas || document.createElement("canvas");
+  try {
+    const gl =
+      probeCanvas.getContext("webgl2", {
+        antialias: false,
+        alpha: true,
+        depth: true,
+        stencil: false,
+        premultipliedAlpha: false,
+        preserveDrawingBuffer: false,
+        powerPreference: "high-performance",
+      }) ||
+      probeCanvas.getContext("experimental-webgl2");
+
+    if (!gl) {
+      return false;
+    }
+
+    const loseContext = gl.getExtension("WEBGL_lose_context");
+    loseContext?.loseContext?.();
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
 const loadTasksVisionModule = async () => {
   if (!tasksVisionModulePromise) {
     tasksVisionModulePromise = import(
@@ -93,6 +137,8 @@ export const useChatStore = defineStore('chat', {
     camera: null,
     holistic: null,
     holisticDelegate: '',
+    holisticRequestedDelegate: '',
+    holisticDelegateStatus: '',
     holisticFallbackAttempted: false,
     holisticEmptyFaceFrames: 0,
     holisticFrameInFlight: false,
@@ -457,6 +503,7 @@ export const useChatStore = defineStore('chat', {
           ".tracking-primary-video-passive"
         ),
         primaryCanvas: document.querySelector("canvas.tracking-primary-canvas"),
+        gpuCanvas: document.querySelector("canvas.tracking-gpu-canvas"),
         debugPreview: document.querySelector(".tracking-preview-debug"),
         debugVideo: document.querySelector(".tracking-debug-video"),
         debugCanvas: document.querySelector("canvas.tracking-debug-canvas"),
@@ -616,7 +663,19 @@ export const useChatStore = defineStore('chat', {
       this.setElementDisplay(debugPreview, debugEnabled ? "block" : "none");
     },
     getPreferredHolisticDelegate() {
-      return "CPU";
+      return getForcedMotionDelegate() || "CPU";
+    },
+    resolveHolisticDelegate(requestedDelegate) {
+      if (requestedDelegate !== "GPU") {
+        return "CPU";
+      }
+
+      const { gpuCanvas } = this.getTrackingPreviewElements();
+      if (!gpuCanvas || !canCreateWebgl2Context(gpuCanvas)) {
+        return "CPU";
+      }
+
+      return "GPU";
     },
     async ensureHolisticLandmarker(
       delegate = this.getPreferredHolisticDelegate(),
@@ -624,15 +683,22 @@ export const useChatStore = defineStore('chat', {
       options = {}
     ) {
       const { forceRecreate = false } = options;
+      const resolvedRequestedDelegate = this.resolveHolisticDelegate(delegate);
+      this.holisticRequestedDelegate = delegate;
       this.logDebug("ensureHolisticLandmarker:start", {
         requestedDelegate: delegate,
+        resolvedRequestedDelegate,
         hasCanvas: Boolean(canvas),
         forceRecreate,
       });
 
-      if (!forceRecreate && this.holistic && this.holisticDelegate === delegate) {
+      if (
+        !forceRecreate &&
+        this.holistic &&
+        this.holisticDelegate === resolvedRequestedDelegate
+      ) {
         this.logDebug("ensureHolisticLandmarker:reuse", {
-          delegate,
+          delegate: resolvedRequestedDelegate,
           hasCanvas: Boolean(canvas),
         });
         return this.holistic;
@@ -664,10 +730,11 @@ export const useChatStore = defineStore('chat', {
       }
 
       const wasmFileset = await tasksVisionFilesetPromise;
-      const resolvedDelegate =
-        delegate === "GPU" && !canvas
-          ? "CPU"
-          : delegate;
+      const resolvedDelegate = resolvedRequestedDelegate;
+      const gpuDelegateCanvas =
+        resolvedDelegate === "GPU"
+          ? this.getTrackingPreviewElements().gpuCanvas || canvas
+          : null;
 
       this.logDebug("ensureHolisticLandmarker:filesetReady", {
         resolvedDelegate,
@@ -676,14 +743,16 @@ export const useChatStore = defineStore('chat', {
       this.logDebug("ensureHolisticLandmarker:createFromOptions", {
         resolvedDelegate,
         modelAssetPath: HOLISTIC_LANDMARKER_MODEL_URL,
-        hasCanvas: Boolean(canvas),
+        hasCanvas: Boolean(gpuDelegateCanvas || canvas),
       });
       this.holistic = markRaw(await HolisticLandmarker.createFromOptions(wasmFileset, {
         baseOptions: {
           modelAssetPath: HOLISTIC_LANDMARKER_MODEL_URL,
           delegate: resolvedDelegate,
         },
-        ...(resolvedDelegate === "GPU" && canvas ? { canvas } : {}),
+        ...(resolvedDelegate === "GPU" && gpuDelegateCanvas
+          ? { canvas: gpuDelegateCanvas }
+          : {}),
         runningMode: "VIDEO",
         minFaceDetectionConfidence: 0.6,
         minFacePresenceConfidence: 0.6,
@@ -698,6 +767,12 @@ export const useChatStore = defineStore('chat', {
       });
 
       this.holisticDelegate = resolvedDelegate;
+      this.holisticDelegateStatus =
+        delegate === "GPU" && resolvedDelegate !== "GPU"
+          ? "gpu-precheck-failed"
+          : resolvedDelegate === "GPU"
+            ? "gpu-active"
+            : "cpu-active";
       this.holisticFallbackAttempted = resolvedDelegate === "CPU";
       this.holisticEmptyFaceFrames = 0;
       this.holisticFrameInFlight = false;
@@ -705,6 +780,39 @@ export const useChatStore = defineStore('chat', {
       this.holisticTrackingLogged = false;
 
       return this.holistic;
+    },
+    async reconfigureHolisticDelegate() {
+      const { primaryCanvas, debugCanvas } = this.getTrackingPreviewElements();
+      const guideCanvas = debugCanvas || primaryCanvas;
+      const preferredDelegate = this.getPreferredHolisticDelegate();
+
+      if (!guideCanvas) {
+        this.holisticRequestedDelegate = preferredDelegate;
+        this.holisticDelegateStatus =
+          preferredDelegate === "GPU" ? "gpu-precheck-failed" : "cpu-active";
+        return this.holisticDelegate || "CPU";
+      }
+
+      try {
+        await this.ensureHolisticLandmarker(preferredDelegate, guideCanvas, {
+          forceRecreate: true,
+        });
+      } catch (error) {
+        if (preferredDelegate === "GPU") {
+          console.warn(
+            "GPU HolisticLandmarker 초기화에 실패해 CPU delegate로 재시도합니다.",
+            error
+          );
+          this.holisticDelegateStatus = "gpu-init-failed";
+          await this.ensureHolisticLandmarker("CPU", guideCanvas, {
+            forceRecreate: true,
+          });
+        } else {
+          throw error;
+        }
+      }
+
+      return this.holisticDelegate || "CPU";
     },
     avatarLoad(id) {
       console.log("1. 아바타 로드 시작");
@@ -1361,8 +1469,10 @@ export const useChatStore = defineStore('chat', {
           ) {
             console.warn("GPU HolisticLandmarker에서 얼굴 인식이 불안정해 CPU delegate로 전환합니다.");
             this.holisticFallbackAttempted = true;
+            this.holisticDelegateStatus = "gpu-tracking-fallback";
             await this.ensureHolisticLandmarker("CPU");
           }
+
         } finally {
           this.holisticFrameInFlight = false;
         }
@@ -1370,6 +1480,7 @@ export const useChatStore = defineStore('chat', {
       const preferredDelegate = this.getPreferredHolisticDelegate();
       this.logDebug("startHolistic:preferredDelegate", {
         preferredDelegate,
+        forcedDelegate: getForcedMotionDelegate(),
       });
 
       try {
@@ -1377,6 +1488,7 @@ export const useChatStore = defineStore('chat', {
       } catch (error) {
         if (preferredDelegate === "GPU") {
           console.warn("GPU HolisticLandmarker 초기화에 실패해 CPU delegate로 재시도합니다.", error);
+          this.holisticDelegateStatus = "gpu-init-failed";
           this.setLoadingState(55, "모션 모델 초기화 재시도 중..<br>CPU");
           await this.ensureHolisticLandmarker("CPU");
         } else {

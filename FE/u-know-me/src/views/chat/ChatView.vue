@@ -56,6 +56,9 @@
               class="tracking-primary-canvas"
               style="position: absolute; left: 0%"
             ></canvas>
+            <canvas
+              class="tracking-gpu-canvas tracking-gpu-canvas-hidden"
+            ></canvas>
           </div>
           <div
             ref="cameraPreviewShell"
@@ -76,9 +79,14 @@
                 class="tracking-debug-canvas"
                 style="position: absolute; left: 0%; display: none"
               ></canvas>
-              <div class="tracking-preview-label">
-                {{ chat.holisticDelegate || "CPU" }}
-              </div>
+              <button
+                type="button"
+                class="tracking-preview-label"
+                @pointerdown.stop
+                @click.stop="toggleMotionDelegate"
+              >
+                {{ trackingPreviewLabel }}
+              </button>
             </div>
             <div
               class="motion-status"
@@ -170,6 +178,40 @@ export default {
       return {
         transform: `translate(${this.cameraPreviewOffset.x}px, ${this.cameraPreviewOffset.y}px)`,
       };
+    },
+    trackingPreviewLabel() {
+      const forcedDelegate =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("ukm-motion-delegate")
+          : null;
+      const activeDelegate = this.chat.holisticDelegate || "CPU";
+      const delegateStatus = this.chat.holisticDelegateStatus;
+
+      if (activeDelegate === "GPU") {
+        return "GPU 사용 중";
+      }
+
+      if (forcedDelegate === "GPU") {
+        if (delegateStatus === "gpu-precheck-failed") {
+          return "CPU · GPU 미지원";
+        }
+
+        if (delegateStatus === "gpu-init-failed") {
+          return "CPU · GPU 초기화 실패";
+        }
+
+        if (delegateStatus === "gpu-tracking-fallback") {
+          return "CPU · GPU 불안정";
+        }
+
+        return "CPU · GPU 실패";
+      }
+
+      if (forcedDelegate === "CPU") {
+        return "CPU 고정";
+      }
+
+      return "CPU 자동 · GPU 시도";
     },
   },
 
@@ -546,6 +588,23 @@ export default {
       window.removeEventListener("pointerup", this.stopCameraPreviewDrag);
       window.removeEventListener("pointercancel", this.stopCameraPreviewDrag);
     },
+    toggleMotionDelegate() {
+      const currentForcedDelegate =
+        window.localStorage.getItem("ukm-motion-delegate");
+
+      if (currentForcedDelegate === "GPU") {
+        window.localStorage.setItem("ukm-motion-delegate", "CPU");
+      } else if (currentForcedDelegate === "CPU") {
+        window.localStorage.removeItem("ukm-motion-delegate");
+      } else {
+        window.localStorage.setItem("ukm-motion-delegate", "GPU");
+      }
+      this.chat
+        .reconfigureHolisticDelegate()
+        .catch((error) =>
+          console.error("모션 delegate 전환 중 오류가 발생했습니다.", error)
+        );
+    },
   },
 };
 </script>
@@ -663,6 +722,14 @@ h1 {
   pointer-events: none;
   overflow: hidden;
 }
+.tracking-gpu-canvas-hidden {
+  position: absolute;
+  inset: 0;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0;
+  pointer-events: none;
+}
 .tracking-preview-debug {
   display: block;
   width: min(240px, 30%);
@@ -698,6 +765,9 @@ h1 {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
+  border: 0;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
 }
 .motion-status {
   margin-top: 10px;
