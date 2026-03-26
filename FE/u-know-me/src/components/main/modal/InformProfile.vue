@@ -1,79 +1,81 @@
 <template>
-  <Form id="informModifyForm" action="POST" @submit="account.modifyInform({ address:credentials.address, id:credentials.id,smoke:credentials.smoke })">
-    <div>
-      <div><label for="informModifyId">아이디</label></div>
+  <section class="profile-sheet">
+    <Form id="informModifyForm" action="POST" @submit="account.modifyInform({ address:credentials.address, id:credentials.id,smoke:credentials.smoke })">
       <div>
-        <Field type="text" name="informModifyId" id="informModifyId" placeholder="아이디를 입력해 주세요." v-model="credentials.id" :rules="validateId" class="disabled-input-bg" disabled />
+        <div><label for="informModifyId">아이디</label></div>
+        <div>
+          <Field type="text" name="informModifyId" id="informModifyId" placeholder="아이디를 입력해 주세요." v-model="credentials.id" :rules="validateId" class="disabled-input-bg" disabled />
+        </div>
+        <ErrorMessage class="error-message" name="informModifyId"/>
       </div>
-      <ErrorMessage class="error-message" name="informModifyId"/>
-    </div>
-    <div>
-      <div><label for="informModifyName">이름</label></div>
-      <div><Field type="text" name="informModifyName" id="informModifyName" placeholder="한글/영문으로 입력해주세요." v-model="credentials.name" :rules="validatename" class="disabled-input-bg" disabled /></div>
-      <ErrorMessage class="error-message" name="informModifyName"/>
-    </div>
-    <div>
-      <div><label for="informModifyNickName">닉네임</label></div>
       <div>
-        <Field type="text" name="informModifyNickName" id="informModifyNickName" placeholder="닉네임을 입력해주세요." v-model="credentials.nickname" :rules="validateNickname" class="disabled-input-bg" disabled />
+        <div><label for="informModifyName">이름</label></div>
+        <div><Field type="text" name="informModifyName" id="informModifyName" placeholder="한글/영문으로 입력해주세요." v-model="credentials.name" :rules="validatename" class="disabled-input-bg" disabled /></div>
+        <ErrorMessage class="error-message" name="informModifyName"/>
       </div>
-      <ErrorMessage class="error-message" name="informModifyNickName"/>
-    </div>
-    <div>
-      <div><label for="informModifyBirth">생년월일</label></div>
       <div>
-        <Field type="text" name="informModifyBirth" id="informModifyBirth" placeholder="생년월일(8자리)" v-model="credentials.birth" :rules="validateBirth" class="disabled-input-bg" disabled />
+        <div><label for="informModifyNickName">닉네임</label></div>
+        <div>
+          <Field type="text" name="informModifyNickName" id="informModifyNickName" placeholder="닉네임을 입력해주세요." v-model="credentials.nickname" :rules="validateNickname" class="disabled-input-bg" disabled />
+        </div>
+        <ErrorMessage class="error-message" name="informModifyNickName"/>
       </div>
-      <ErrorMessage class="error-message" name="informModifyBirth"/>
-    </div>
-    <div>
-      <div><label for="informModifyGender">성별</label></div>
       <div>
-        <Field name="informModifyGender" id="informModifyGender" v-model="credentials.gender" as="select" :rules="isRequired" class="disabled-input-bg" disabled >
-          <option
-            v-for="(gender, idx) in genders"
-            :key="idx"
-            :value="genders_val[idx]"
-          >{{ gender }}</option>
-        </Field>
+        <div><label for="informModifyBirth">생년월일</label></div>
+        <div>
+          <Field type="text" name="informModifyBirth" id="informModifyBirth" placeholder="생년월일(8자리)" v-model="credentials.birth" :rules="validateBirth" class="disabled-input-bg" disabled />
+        </div>
+        <ErrorMessage class="error-message" name="informModifyBirth"/>
       </div>
-      <ErrorMessage class="error-message" name="informModifyGender"/>
-    </div>
-    <div>
-      <div><label for="informModifyRegion">지역</label></div>
       <div>
-        <Field name="informModifyRegion" id="informModifyRegion" v-model="credentials.address" as="select" :rules="isRequired">
-          <option
-            v-for="(region, idx) in regions"
-            :key="idx"
-            :value="regions_val[idx]"
-          >{{ region }}</option>
-        </Field>
+        <div><label for="informModifyGender">성별</label></div>
+        <div>
+          <Field name="informModifyGender" id="informModifyGender" v-model="credentials.gender" as="select" :rules="isRequired" class="disabled-input-bg" disabled >
+            <option
+              v-for="(gender, idx) in genders"
+              :key="idx"
+              :value="genders_val[idx]"
+            >{{ gender }}</option>
+          </Field>
+        </div>
+        <ErrorMessage class="error-message" name="informModifyGender"/>
       </div>
-      <ErrorMessage class="error-message" name="informModifyRegion"/>
-    </div>
-    <div>
-      <div><label for="informModifySmoking">흡연여부</label></div>
       <div>
-        <Field name="informModifySmoking" id="informModifySmoking" v-model="credentials.smoke" as="select" :rules="isRequired">
-          <option
-            v-for="(smoke, idx) in smokes"
-            :key="idx"
-            :value="smokes_val[idx]"
-          >{{ smoke }}</option>
-        </Field>
+        <div><label for="informModifyRegion">지역</label></div>
+        <div>
+          <Field name="informModifyRegion" id="informModifyRegion" v-model="credentials.address" as="select" :rules="isRequired">
+            <option
+              v-for="(region, idx) in regions"
+              :key="idx"
+              :value="regions_val[idx]"
+            >{{ region }}</option>
+          </Field>
+        </div>
+        <ErrorMessage class="error-message" name="informModifyRegion"/>
       </div>
-      <ErrorMessage class="error-message" name="informModifySmoking"/>
-    </div>
-    <div>
-      <div><label for="informModifyPhoneNumber">휴대전화</label></div>
       <div>
-        <Field type="text" name="informModifyPhoneNumber" id="informModifyPhoneNumber" placeholder="-없이 입력해주세요." v-model="credentials.tel" :rules="validateTel" class="disabled-input-bg" disabled />
+        <div><label for="informModifySmoking">흡연여부</label></div>
+        <div>
+          <Field name="informModifySmoking" id="informModifySmoking" v-model="credentials.smoke" as="select" :rules="isRequired">
+            <option
+              v-for="(smoke, idx) in smokes"
+              :key="idx"
+              :value="smokes_val[idx]"
+            >{{ smoke }}</option>
+          </Field>
+        </div>
+        <ErrorMessage class="error-message" name="informModifySmoking"/>
       </div>
-      <ErrorMessage class="error-message" name="informModifyPhoneNumber"/>
-    </div>
-    <button type="submit" class="sign-btn">수정하기</button>
-  </Form>
+      <div>
+        <div><label for="informModifyPhoneNumber">휴대전화</label></div>
+        <div>
+          <Field type="text" name="informModifyPhoneNumber" id="informModifyPhoneNumber" placeholder="-없이 입력해주세요." v-model="credentials.tel" :rules="validateTel" class="disabled-input-bg" disabled />
+        </div>
+        <ErrorMessage class="error-message" name="informModifyPhoneNumber"/>
+      </div>
+      <button type="submit" class="sign-btn">수정하기</button>
+    </Form>
+  </section>
 </template>
 
 <script>
@@ -185,11 +187,19 @@ export default {
 }
 </script>
 
-<style>
+<style scoped>
+.profile-sheet {
+  padding: 20px 22px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(160, 86, 255, 0.08);
+}
+
 #informModifyForm {
-  height: calc(100% - 100px);
-  margin-left: 32px;
-  margin-right: -38px;
+  display: grid;
+  gap: 14px;
+  max-height: min(54vh, 520px);
+  padding-right: 8px;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -205,63 +215,70 @@ export default {
   background: rgba(160, 86, 255, .1);
 }
 #informModifyForm div {
-  padding-top: 4px;
+  padding-top: 0;
 }
 #informModifyForm div label {
-  width: 44px;
-  height: 20px;
+  display: inline-block;
   font-weight: 600;
-  font-size: 16px;
-  line-height: 20px;
-  color: #000000;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #352653;
+  margin-bottom: 8px;
 }
 #informModifyForm div input, #informModifyForm div select {
   box-sizing: border-box;
-  width: 412px;
-  height: 40px;
-  background: #FFFFFF;
-  border: 1px solid #C1BBBB;
-  border-radius: 8px;
-  padding: 10px;
-}
-#informModifyForm div .middle-input {
-  width: 296px;
-}
-#informModifyForm div .sort-input {
-  width: 132px;
-  margin-right: 8px;
+  width: 100%;
+  height: 50px;
+  background: #fdfbff;
+  border: 1px solid #dbcff0;
+  border-radius: 16px;
+  padding: 0 16px;
+  color: #281b40;
+  font-size: 15px;
 }
 #informModifyForm button {
-  box-sizing: border-box;
-  height: 40px;
-  background: #A056FF;
-  border: 1px solid #C1BBBB;
-  font-weight: 400;
-  font-size: 12px;
-  line-height: 20px;
-  text-align: center;
-  color: #FFFFFF;
-  margin-left: 8px;
-}
-#informModifyForm div button {
-  width: 104px;
+  border: none;
+  cursor: pointer;
 }
 #informModifyForm .sign-btn {
-    width: 412px;
-    margin: 32px 0px 4px 0px;
+  width: 100%;
+  height: 54px;
+  margin: 6px 0 0;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #a056ff, #c284ff);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: 0 14px 26px rgba(160, 86, 255, 0.24);
 }
 #informModifyForm button:hover {
-  background: #8d39fc;
-}
-#informModifyForm button:active {
-  background: #8122fe;
+  filter: brightness(0.98);
 }
 #informModifyForm .error-message {
   font-size: 12px;
   line-height: 18px;
-  color: red
+  color: #d53b57;
 }
 #informModifyForm .disabled-input-bg {
-  background-color: #efefef;
+  background-color: #f0ecf6;
+  color: #7d7394;
+}
+
+#informModifyForm input:focus,
+#informModifyForm select:focus {
+  outline: none;
+  border-color: #a056ff;
+  box-shadow: 0 0 0 4px rgba(160, 86, 255, 0.12);
+}
+
+@media (max-width: 720px) {
+  .profile-sheet {
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  #informModifyForm {
+    max-height: none;
+  }
 }
 </style>

@@ -1,57 +1,54 @@
 <template>
-  <div class="main-modal-bg">
-    <div class="inform-side-btn" v-if="main.pBtnCh">
-      <div><button class="inform-modify-btn" :class="{'inform-click-btn':main.pBtnCh===1}" @click="main.pBtnCh=1">내프로필</button></div>
-      <div><button class="inform-modify-btn" :class="{'inform-click-btn':main.pBtnCh===2}" @click="main.pBtnCh=2">보안설정</button></div>
-    </div>
-    <div class="main-modal" 
-    :class="{
-        'logout-modal': btnCh===1, 
-        'inform-password-modal': btnCh===2,
-        'inform-modal': btnCh===3,
-        'inform-modify-profile': btnCh===3&&main.pBtnCh===1,
-        'inform-modify-secure': btnCh===3&&main.pBtnCh===2,
-        'matching-modal': btnCh===4,
-        'main-notice-modal': btnCh===5,
-        'main-notice-detail-modal': btnCh===6,
-      }">
-      <div class="close-btn" @click="btnCh=0;main.pBtnCh=0">
+  <div class="main-modal-bg" @click.self="closeModal">
+    <div class="main-modal" :class="modalShellClass">
+      <button class="close-btn" type="button" @click="closeModal" aria-label="닫기">
         <i class="fa-solid fa-xmark x-btn"></i>
+      </button>
+
+      <div v-if="btnCh === 3" class="modal-tabbar">
+        <button
+          class="modal-tab"
+          :class="{ 'modal-tab-active': main.pBtnCh === 1 }"
+          type="button"
+          @click="main.pBtnCh = 1"
+        >
+          내 프로필
+        </button>
+        <button
+          class="modal-tab"
+          :class="{ 'modal-tab-active': main.pBtnCh === 2 }"
+          type="button"
+          @click="main.pBtnCh = 2"
+        >
+          보안 설정
+        </button>
       </div>
-      <div
-      :class="{
-        'logout-modal-content': btnCh===1, 
-        'inform-password-modal-content': btnCh===2,
-        'inform-modal-content': btnCh===3,
-        'inform-modify-profile-content': btnCh===3&&main.pBtnCh===1,
-        'inform-modify-secure-content': btnCh===3&&main.pBtnCh===2,
-        'matching-modal-content': btnCh===4,
-        'main-notice-modal-content': btnCh===5,
-        'main-notice-detail-modal-content': btnCh===6,
-      }">
-        <Logout v-if="btnCh===1"/>
-        <InformPassword v-if="btnCh===2"/>
-        <Inform v-if="btnCh===3"/>
-        <MatchingOption v-if="btnCh===4"/>
-        <MainNotice v-if="btnCh===5"/>
-        <MainNoticeDetail v-if="btnCh===6"/>
+
+      <div class="main-modal-content" :class="modalContentClass">
+        <Logout v-if="btnCh === 1" />
+        <InformPassword v-if="btnCh === 2" />
+        <Inform v-if="btnCh === 3" />
+        <MatchingOption v-if="btnCh === 4" />
+        <MainNotice v-if="btnCh === 5" />
+        <MainNoticeDetail v-if="btnCh === 6" />
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import Inform from '@/components/main/modal/InformModal.vue'
-import InformPassword from '@/components/main/modal/InformPassword.vue'
-import Logout from '@/components/main/modal/LogoutModal.vue'
-import MatchingOption from '@/components/main/modal/MatchingOption.vue'
-import MainNotice from '@/components/main/modal/MainNotice.vue'
-import MainNoticeDetail from '@/components/main/modal/MainNoticeDetail.vue'
-import { storeToRefs } from 'pinia'
-import { useMainStore } from '@/stores/main/main'
+import Inform from "@/components/main/modal/InformModal.vue";
+import InformPassword from "@/components/main/modal/InformPassword.vue";
+import Logout from "@/components/main/modal/LogoutModal.vue";
+import MatchingOption from "@/components/main/modal/MatchingOption.vue";
+import MainNotice from "@/components/main/modal/MainNotice.vue";
+import MainNoticeDetail from "@/components/main/modal/MainNoticeDetail.vue";
+import { storeToRefs } from "pinia";
+import { computed } from "vue";
+import { useMainStore } from "@/stores/main/main";
 
 export default {
-  name: 'MainModal',
+  name: "MainModal",
   components: {
     Inform,
     InformPassword,
@@ -61,111 +58,207 @@ export default {
     MainNoticeDetail,
   },
   setup() {
-    const main = useMainStore()
-    const { btnCh } = storeToRefs(main)
+    const main = useMainStore();
+    const { btnCh } = storeToRefs(main);
+
+    const modalShellClass = computed(() => ({
+      "main-modal-compact": [1, 2, 4].includes(btnCh.value),
+      "main-modal-wide": [3, 5, 6].includes(btnCh.value),
+      "main-modal-with-tabs": btnCh.value === 3,
+    }));
+
+    const modalContentClass = computed(() => ({
+      "main-modal-content-compact": [1, 2, 4].includes(btnCh.value),
+      "main-modal-content-form": [2, 3, 4].includes(btnCh.value),
+      "main-modal-content-notice": [5, 6].includes(btnCh.value),
+    }));
+
+    const closeModal = () => {
+      main.btnCh = 0;
+      main.pBtnCh = 0;
+    };
+
     return {
       main,
-      btnCh
-    }
+      btnCh,
+      modalShellClass,
+      modalContentClass,
+      closeModal,
+    };
   },
-}
+};
 </script>
 
-<style>
+<style scoped>
 .main-modal-bg {
-  width: 100vw;
-  height: 100vh;
-  z-index: 9;
-  background: rgba(0, 0, 0, 0.5);
   position: fixed;
+  inset: 0;
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background:
+    radial-gradient(circle at top left, rgba(196, 173, 255, 0.26), transparent 34%),
+    rgba(15, 9, 24, 0.46);
+  backdrop-filter: blur(10px);
 }
+
 .main-modal {
   position: relative;
-  background: #ffffff;
-  box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
-  border-radius: 27px;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  width: min(560px, calc(100vw - 36px));
+  max-height: min(86vh, 860px);
+  border-radius: 30px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 244, 255, 0.98));
+  box-shadow:
+    0 22px 60px rgba(27, 13, 55, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  overflow: hidden;
 }
-.inform-side-btn {
+
+.main-modal::before {
+  content: "";
   position: absolute;
-  left: calc(50% - 412px);
-  top: 20%;
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, rgba(160, 86, 255, 0.14), transparent 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.54), transparent 58%);
+  pointer-events: none;
 }
-.logout-modal {
-  width: min(460px, calc(100vw - 32px));
-  min-height: 0;
+
+.main-modal-compact {
+  width: min(560px, calc(100vw - 36px));
 }
-.inform-modal {
-  width: 640px;
-  /* height: 80%; */
+
+.main-modal-wide {
+  width: min(900px, calc(100vw - 36px));
 }
-.inform-password-modal {
-  width: 550px;
-  /* height: 350px; */
+
+.main-modal-with-tabs {
+  width: min(980px, calc(100vw - 36px));
 }
-.matching-modal {
-  width: 440px;
+
+.close-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 3;
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #26193f;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(70, 38, 121, 0.12);
+  transition: transform 0.2s ease, background-color 0.2s ease;
 }
-.main-notice-modal {
-  width: 600px;
+
+.close-btn:hover {
+  background: rgba(244, 235, 255, 0.96);
+  transform: translateY(-1px);
 }
-.main-notice-detail-modal {
-  width: 600px;
+
+.x-btn {
+  font-size: 28px;
 }
-.inform-modify-profile {
-  height: 80%;
-}
-.inform-modify-secure {
-  height: 80%;
-}
-.logout-modal-content {
-  padding: 38px 38px 34px;
-  text-align: left;
-}
-.inform-modal-content {
-  padding: 32px 69px;
-  text-align: left;
-  height: 92%;
-}
-.inform-password-modal-content {
-  padding: 32px 69px;
-  text-align: left;
-  height: 92%;
-}
-.inform-modify-profile-content {
-  padding: 32px 69px;
-  text-align: left;
-  height: 92%;
-}
-.inform-modify-secure-content {
-  padding: 32px 69px;
-  text-align: left;
-  height: 92%;
-}
-.matching-modal-content {
-  padding: 32px 69px;
-  text-align: center;
-  height: 92%;
-}
-.main-notice-modal-content {
-  padding: 32px 45px;
-  text-align: left;
-  height: 92%;
-}
-.main-notice-detail-modal-content {
-  padding: 32px 45px;
-  text-align: left;
-  height: 92%;
-}
-.inform-modify-btn {
-  margin: 4px 0;
-  background-color: #A056FF;
-  color: white;
-}
-.inform-click-btn {
+
+.modal-tabbar {
   position: relative;
-  left: -12%;
+  z-index: 2;
+  display: flex;
+  gap: 10px;
+  padding: 26px 28px 0;
+}
+
+.modal-tab {
+  min-width: 132px;
+  height: 46px;
+  border: 1px solid rgba(160, 86, 255, 0.22);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #6e5d8b;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.modal-tab:hover {
+  background: rgba(246, 238, 255, 0.96);
+  color: #513975;
+}
+
+.modal-tab-active {
+  background: linear-gradient(135deg, #a056ff, #c284ff);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 10px 20px rgba(160, 86, 255, 0.24);
+}
+
+.main-modal-content {
+  position: relative;
+  z-index: 1;
+  overflow: auto;
+  padding: 34px 32px 32px;
+  max-height: min(86vh, 860px);
+}
+
+.main-modal-content-compact {
+  padding-top: 40px;
+}
+
+.main-modal-content-form {
+  max-height: min(86vh, 860px);
+}
+
+.main-modal-content-notice {
+  padding-top: 40px;
+}
+
+@media (max-width: 900px) {
+  .main-modal-bg {
+    padding: 14px;
+  }
+
+  .main-modal,
+  .main-modal-compact,
+  .main-modal-wide,
+  .main-modal-with-tabs {
+    width: min(100%, calc(100vw - 20px));
+    max-height: calc(100dvh - 20px);
+    border-radius: 24px;
+  }
+
+  .main-modal-content {
+    padding: 28px 18px 20px;
+    max-height: calc(100dvh - 20px);
+  }
+
+  .modal-tabbar {
+    padding: 22px 18px 0;
+    gap: 8px;
+  }
+
+  .modal-tab {
+    min-width: 0;
+    flex: 1 1 0;
+    height: 44px;
+    font-size: 14px;
+  }
+
+  .close-btn {
+    top: 14px;
+    right: 14px;
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+  }
+
+  .x-btn {
+    font-size: 24px;
+  }
 }
 </style>

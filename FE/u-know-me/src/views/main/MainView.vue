@@ -37,8 +37,27 @@ body {
   margin: 0;
 }
 .background {
+  --main-side-gap: 20px;
+  --main-top-gap: 15px;
+  --main-avatar-panel-width: 300px;
+  --main-right-panel-width: 240px;
+  --main-right-offset: 50px;
+  --main-avatar-button-left: 60px;
+  --main-avatar-button-bottom: 50px;
   background: linear-gradient(180deg, #ebdcfe 0%, rgba(217, 217, 217, 0) 100%);
   width: 100vw;
   height: 100vh;
+}
+
+@media screen and (max-width: 700px) {
+  .background {
+    --main-side-gap: 12px;
+    --main-top-gap: 10px;
+    --main-avatar-panel-width: min(300px, calc(100vw - 24px));
+    --main-right-panel-width: 190px;
+    --main-right-offset: 12px;
+    --main-avatar-button-left: 12px;
+    --main-avatar-button-bottom: 50px;
+  }
 }
 </style>

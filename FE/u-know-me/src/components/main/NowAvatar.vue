@@ -8,6 +8,7 @@
       ></progress>
       <div class="loading">
         <span>LOADING {{ avatarProgressLabel }}</span>
+        <div class="loading-stage">{{ avatarFun.avatarLoadingLabel }}</div>
       </div>
     </div>
 
@@ -103,12 +104,19 @@ export default {
   transform: translate(-50%, 0%);
   font-size: x-large;
   color: rgb(37, 37, 37);
+  text-align: center;
 }
 
 .loading span {
   display: inline-block;
   margin: 0 -0.05em;
   animation: loading 0.5s infinite alternate;
+}
+
+.loading-stage {
+  margin-top: 8px;
+  font-size: 15px;
+  color: rgba(37, 37, 37, 0.82);
 }
 
 progress {

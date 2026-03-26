@@ -321,9 +321,11 @@ export default {
 <style>
 .button-list {
   position: absolute;
-  right: 50px;
-  top: 15px;
+  right: var(--main-right-offset, 50px);
+  top: var(--main-top-gap, 15px);
   width: min-content;
+  display: grid;
+  justify-items: end;
 }
 
 .main-btn {
@@ -370,7 +372,7 @@ export default {
 }
 .match-circle {
   position: absolute;
-  right: 50px;
+  right: var(--main-right-offset, 50px);
   bottom: 20px;
   display: grid;
 }
@@ -463,12 +465,12 @@ export default {
 } */
 .speech-bubble {
   position: absolute;
-  right: 30px;
+  right: calc(var(--main-right-offset, 50px) - 20px);
   bottom: 300px;
   background: linear-gradient(90deg, #d803f499, #8041f499, #d803f499);
   background-size: 400%;
   border-radius: 20px;
-  width: 240px;
+  width: var(--main-right-panel-width, 240px);
   margin: 1em 0;
   text-align: center;
   line-height: 150%;
@@ -511,5 +513,60 @@ export default {
 #speech-text2 {
   font-size: 90%;
   line-height: 140%;
+}
+
+@media (max-width: 900px) {
+  .button-list {
+    right: var(--main-right-offset, 12px);
+    top: var(--main-top-gap, 10px);
+    gap: 6px;
+  }
+
+  .main-btn {
+    width: 132px;
+    height: 50px;
+    margin: 0;
+    padding: 8px 16px;
+    border-radius: 16px;
+    font-size: 15px;
+  }
+
+  .main-btn img {
+    width: 16px;
+    height: 16px;
+  }
+
+  .main-btn-mata {
+    position: fixed;
+    left: var(--main-avatar-button-left, 12px);
+    top: calc(var(--main-top-gap, 10px) + 12px);
+    width: 126px !important;
+    margin: 0 !important;
+    z-index: 1;
+  }
+
+  .match-circle {
+    right: var(--main-right-offset, 12px);
+    bottom: 12px;
+  }
+
+  #love-container {
+    min-width: 160px;
+    height: 160px;
+  }
+
+  .matching-btn {
+    width: 164px;
+    height: 42px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+
+  .speech-bubble {
+    right: var(--main-right-offset, 12px);
+    bottom: 236px;
+    width: var(--main-right-panel-width, 190px);
+    border-radius: 16px;
+  }
 }
 </style>

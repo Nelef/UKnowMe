@@ -34,6 +34,18 @@ export default {
     const account = useAccountStore();
     let mediaViewContent = null;
     let viewChangeHandler = null;
+    const getHiddenOffset = () => {
+      const background = document.querySelector(".background");
+      if (!background) {
+        return "-300px";
+      }
+
+      const cssWidth = getComputedStyle(background)
+        .getPropertyValue("--main-avatar-panel-width")
+        .trim();
+
+      return cssWidth ? `calc(-1 * ${cssWidth})` : "-300px";
+    };
 
     onMounted(() => {
       //media 반응형
@@ -47,7 +59,7 @@ export default {
         }
 
         if (mediaQuery.matches === true) {
-          toggle.style.left = "-300px";
+          toggle.style.left = getHiddenOffset();
           toggleBtn.style.bottom = "50px";
         } else {
           toggle.style.left = "0px";
@@ -74,9 +86,15 @@ export default {
   methods: {
     toggleAvatar() {
       var toggle = document.querySelector(".avatarCollection");
+      const background = document.querySelector(".background");
+      const hiddenOffset = background
+        ? `calc(-1 * ${getComputedStyle(background)
+            .getPropertyValue("--main-avatar-panel-width")
+            .trim() || "300px"})`
+        : "-300px";
 
       if (toggle.style.left == "0px") {
-        toggle.style.left = "-300px";
+        toggle.style.left = hiddenOffset;
       } else {
         toggle.style.left = "0px";
       }
@@ -88,8 +106,9 @@ export default {
 <style>
 .avatarCollection {
   position: absolute;
-  left: -300px;
-  width: fit-content;
+  left: calc(-1 * var(--main-avatar-panel-width, 300px));
+  width: var(--main-avatar-panel-width, 300px);
+  box-sizing: border-box;
   z-index: 2;
   height: calc(100% - 170px);
   top: 5px;
@@ -114,18 +133,18 @@ export default {
 }
 #avatarBtn {
   position: absolute;
-  left: 60px;
-  bottom: 50px;
+  left: var(--main-avatar-button-left, 60px);
+  bottom: var(--main-avatar-button-bottom, 50px);
   margin: 0px;
   z-index: 2;
   transition: 0.5s;
 }
 @media screen and (max-width: 700px) {
   .avatarCollection {
-    left: -300px;
+    left: calc(-1 * var(--main-avatar-panel-width, 300px));
   }
   #avatarBtn {
-    bottom: 50px;
+    bottom: var(--main-avatar-button-bottom, 50px);
   }
 }
 @media screen and (min-width: 700px) {
