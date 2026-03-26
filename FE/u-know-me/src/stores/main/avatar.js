@@ -5,6 +5,24 @@ import * as OrbitControls from "three/examples/jsm/controls/OrbitControls";
 import * as VRMUtils from "@pixiv/three-vrm";
 import { useAccountStore } from '../land/account';
 
+const MAIN_AVATAR_RENDER_PIXEL_RATIO = 1;
+const MAIN_AVATAR_RENDER_FPS = 60;
+const MAIN_RENDER_BOOST_MS = 900;
+
+const isAppleTouchDevice = () => {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  return (
+    /iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+};
+
+const getMainAvatarPixelRatio = () =>
+  isAppleTouchDevice() ? 0.9 : MAIN_AVATAR_RENDER_PIXEL_RATIO;
+
 export const useAvatarStore = defineStore('avatar', {
   state: () => ({
     avatarMan: [
@@ -33,6 +51,8 @@ export const useAvatarStore = defineStore('avatar', {
     animationFrameId: null,
     blinkIntervalId: null,
     resizeHandler: null,
+    visibilityHandler: null,
+    resizeObserver: null,
     loadRequestId: 0,
   }),
   getters: {
@@ -54,6 +74,16 @@ export const useAvatarStore = defineStore('avatar', {
       if (this.resizeHandler) {
         window.removeEventListener("resize", this.resizeHandler);
         this.resizeHandler = null;
+      }
+
+      if (this.visibilityHandler) {
+        document.removeEventListener("visibilitychange", this.visibilityHandler);
+        this.visibilityHandler = null;
+      }
+
+      if (this.resizeObserver) {
+        this.resizeObserver.disconnect();
+        this.resizeObserver = null;
       }
 
       if (this.orbitControls) {
@@ -108,9 +138,21 @@ export const useAvatarStore = defineStore('avatar', {
       }
 
       const scene = new THREE.Scene();
-      const renderer = new THREE.WebGLRenderer({ alpha: true });
-      renderer.setSize(window.innerWidth, window.innerHeight, false);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      const renderer = new THREE.WebGLRenderer({
+        alpha: true,
+        antialias: true,
+        powerPreference: "high-performance",
+      });
+      const getRenderSize = () => {
+        const rect = avatarContainer.getBoundingClientRect();
+        return {
+          width: Math.max(1, Math.round(rect.width || window.innerWidth)),
+          height: Math.max(1, Math.round(rect.height || window.innerHeight)),
+        };
+      };
+      const initialSize = getRenderSize();
+      renderer.setSize(initialSize.width, initialSize.height, false);
+      renderer.setPixelRatio(getMainAvatarPixelRatio());
       renderer.domElement.id = "nowAvatar";
 
       avatarContainer.append(renderer.domElement);
@@ -118,7 +160,7 @@ export const useAvatarStore = defineStore('avatar', {
       // camera
       const orbitCamera = new THREE.PerspectiveCamera(
         75,
-        window.innerWidth / window.innerHeight,
+        initialSize.width / initialSize.height,
         0.1,
         1000
       );
@@ -126,9 +168,12 @@ export const useAvatarStore = defineStore('avatar', {
 
       // window resize
       const resizeHandler = () => {
-        orbitCamera.aspect = window.innerWidth / window.innerHeight;
+        const size = getRenderSize();
+        orbitCamera.aspect = size.width / size.height;
         orbitCamera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(size.width, size.height, false);
+        renderer.setPixelRatio(getMainAvatarPixelRatio());
+        boostRendering();
       };
       window.addEventListener("resize", resizeHandler);
 
@@ -147,6 +192,17 @@ export const useAvatarStore = defineStore('avatar', {
       orbitControls.minAzimuthAngle = -1;
       orbitControls.maxAzimuthAngle = 1;
 
+      let renderBoostUntil = performance.now() + MAIN_RENDER_BOOST_MS;
+      const boostRendering = (durationMs = MAIN_RENDER_BOOST_MS) => {
+        renderBoostUntil = Math.max(
+          renderBoostUntil,
+          performance.now() + durationMs
+        );
+      };
+
+      orbitControls.addEventListener("start", () => boostRendering(1400));
+      orbitControls.addEventListener("change", () => boostRendering(500));
+      orbitControls.addEventListener("end", () => boostRendering(800));
 
       // light
       const light = new THREE.DirectionalLight(0xffffff);
@@ -158,20 +214,56 @@ export const useAvatarStore = defineStore('avatar', {
       this.orbitControls = orbitControls;
       this.orbitCamera = orbitCamera;
       this.resizeHandler = resizeHandler;
+      this.visibilityHandler = () => {
+        if (!document.hidden) {
+          boostRendering(1400);
+        }
+      };
+      document.addEventListener("visibilitychange", this.visibilityHandler);
+
+      if (typeof ResizeObserver !== "undefined") {
+        this.resizeObserver = new ResizeObserver(() => {
+          resizeHandler();
+        });
+        this.resizeObserver.observe(avatarContainer);
+      }
 
       // Main Render Loop
-      const clock = new THREE.Clock();
+      let lastFrameAt = performance.now();
+      let lastRenderAt = 0;
+      const renderFrameInterval = 1000 / MAIN_AVATAR_RENDER_FPS;
 
-      const animate = () => {
+      const animate = (now = 0) => {
         this.animationFrameId = requestAnimationFrame(animate);
 
-        if (this.currentVrm) {
-          // Update model to render physics
-          this.currentVrm.update(clock.getDelta());
+        if (document.hidden) {
+          lastFrameAt = now;
+          lastRenderAt = now;
+          return;
         }
-        renderer.render(scene, orbitCamera);
 
-        orbitControls.update();
+        if (now > renderBoostUntil) {
+          return;
+        }
+
+        if (now - lastRenderAt < renderFrameInterval) {
+          return;
+        }
+        lastRenderAt = now;
+
+        const deltaSeconds = Math.min((now - lastFrameAt) / 1000, 1 / 24);
+        lastFrameAt = now;
+
+        if (this.currentVrm) {
+          this.currentVrm.update(deltaSeconds);
+        }
+
+        const controlsChanged = orbitControls.update();
+        if (controlsChanged) {
+          boostRendering(250);
+        }
+
+        renderer.render(scene, orbitCamera);
       };
       animate();
 
@@ -225,6 +317,7 @@ export const useAvatarStore = defineStore('avatar', {
             vrm.blendShapeProxy.setValue(VRMUtils.VRMSchema.BlendShapePresetName.A, 0.4);
             this.avatarProgress = 100;
             this.avatarLoading = false;
+            boostRendering(1600);
           });
         },
 
@@ -250,20 +343,20 @@ export const useAvatarStore = defineStore('avatar', {
       )
 
       const blink = () => {
-        for (let i = 0; i < 4; i++) {
-          if (this.currentVrm?.scene) {
-            var vrm = this.currentVrm;
-            var blinkValue = vrm.blendShapeProxy.getValue(VRMUtils.VRMSchema.BlendShapePresetName.Blink)
-            if (blinkValue === 0) {
-              var rand = Math.random()
-              if (rand > .9) {
-                vrm.blendShapeProxy.setValue('blink', 1)
-              }
-            } else {
-              vrm.blendShapeProxy.setValue(VRMUtils.VRMSchema.BlendShapePresetName.Blink, 0)
+        if (this.currentVrm?.scene) {
+          var vrm = this.currentVrm;
+          var blinkValue = vrm.blendShapeProxy.getValue(VRMUtils.VRMSchema.BlendShapePresetName.Blink)
+          if (blinkValue === 0) {
+            var rand = Math.random()
+            if (rand > .9) {
+              vrm.blendShapeProxy.setValue('blink', 1)
+              boostRendering(220);
             }
-            vrm.blendShapeProxy.update()
+          } else {
+            vrm.blendShapeProxy.setValue(VRMUtils.VRMSchema.BlendShapePresetName.Blink, 0)
+            boostRendering(220);
           }
+          vrm.blendShapeProxy.update()
         }
       };
       this.blinkIntervalId = setInterval(blink, 1000)

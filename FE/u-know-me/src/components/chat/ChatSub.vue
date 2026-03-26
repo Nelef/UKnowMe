@@ -179,7 +179,7 @@
 
 <script>
 import { useChatStore } from "@/stores/chat/chat";
-import { onMounted } from "vue";
+import { onBeforeUnmount, onMounted } from "vue";
 import { useMainStore } from "@/stores/main/main";
 
 export default {
@@ -192,6 +192,9 @@ export default {
   setup() {
     const chat = useChatStore();
     const main = useMainStore();
+    let mediaViewContent = null;
+    let viewChangeHandler = null;
+    let initialLayoutTimerId = null;
 
     onMounted(() => {
       var chatSub = document.querySelector(".chat-sub");
@@ -202,35 +205,20 @@ export default {
           avatarCanvas.id = toId;
         }
       };
-      setTimeout(() => {
-        // 접속당시 width가 1120px 보다 작을 때,
-        if (window.innerWidth < 1120) {
-          chatSub.style.bottom = "-200px";
-          chatSubMobile.style.left = "50%";
-          document.documentElement.style.setProperty(
-            "--chat-sub-size",
-            "400px"
-          );
-          // 1대1일때 모바일
-          if (main.option.matchingRoom == "1") {
-            document.documentElement.style.setProperty("--video-size", "1");
-            chat.mobile = true;
 
-            renameAvatarCanvas("avatarCanvas1", "avatarCanvas2");
-          }
+      const applyResponsiveLayout = (isMobile) => {
+        if (!chatSub || !chatSubMobile) {
+          return;
         }
-      }, 2000);
-      //media 반응형
-      const mediaViewContent = window.matchMedia(`(max-width: 1120px)`); // 1
-      const viewChangeHandler = (mediaViewContent) => {
-        // 모바일
-        if (mediaViewContent.matches === true) {
+
+        if (isMobile) {
           chatSub.style.bottom = "-200px";
           chatSubMobile.style.left = "50%";
           document.documentElement.style.setProperty(
             "--chat-sub-size",
             "400px"
           );
+
           if (main.option.matchingRoom == "1") {
             document.documentElement.style.setProperty("--video-size", "1");
             chat.mobile = true;
@@ -252,7 +240,26 @@ export default {
           }
         }
       };
+
+      initialLayoutTimerId = window.setTimeout(() => {
+        applyResponsiveLayout(window.innerWidth < 1120);
+      }, 2000);
+
+      mediaViewContent = window.matchMedia(`(max-width: 1120px)`);
+      viewChangeHandler = (event) => {
+        applyResponsiveLayout(event.matches);
+      };
       mediaViewContent.addEventListener("change", viewChangeHandler);
+    });
+
+    onBeforeUnmount(() => {
+      if (initialLayoutTimerId) {
+        window.clearTimeout(initialLayoutTimerId);
+      }
+
+      if (mediaViewContent && viewChangeHandler) {
+        mediaViewContent.removeEventListener("change", viewChangeHandler);
+      }
     });
 
     return { chat, main };

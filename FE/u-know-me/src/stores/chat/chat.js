@@ -2,10 +2,8 @@ import { defineStore } from 'pinia'
 import { markRaw } from 'vue'
 import * as THREE from "three";
 import * as GLTF from "three/examples/jsm/loaders/GLTFLoader";
-import * as OrbitControls from "three/examples/jsm/controls/OrbitControls";
 import * as VRMUtils from "@pixiv/three-vrm";
 import * as Kalidokit from "kalidokit";
-import * as DrawConnectors from "@mediapipe/drawing_utils";
 import { useMainStore } from '../main/main';
 import { useAccountStore } from '../land/account';
 import { buildBackendWsUrl, buildFrontendUrl } from '@/config/runtime'
@@ -29,6 +27,42 @@ const TASKS_VISION_MODULE_URL = buildPublicAssetUrl("mediapipe/vision_bundle.mjs
 const HOLISTIC_LANDMARKER_MODEL_URL = buildPublicAssetUrl(
   "mediapipe/models/holistic_landmarker.task"
 );
+const CHAT_RENDER_PIXEL_RATIO = 1;
+const CHAT_RENDER_FPS = 60;
+const CHAT_CAPTURE_FPS = 24;
+const CHAT_MOTION_PROCESS_FPS = 24;
+const CHAT_DESKTOP_CAMERA_SIZE = { width: 640, height: 480 };
+const CHAT_MOBILE_CAMERA_SIZE = { width: 480, height: 360 };
+const CHAT_DESKTOP_AVATAR_SIZE = { width: 640, height: 480 };
+const CHAT_MOBILE_AVATAR_SIZE = { width: 540, height: 405 };
+
+const isAppleTouchDevice = () => {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  return (
+    /iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+};
+
+const isCompactViewport = () =>
+  typeof window !== "undefined" &&
+  window.matchMedia("(max-width: 900px)").matches;
+
+const getTrackingCameraSize = () =>
+  isAppleTouchDevice() || isCompactViewport()
+    ? CHAT_MOBILE_CAMERA_SIZE
+    : CHAT_DESKTOP_CAMERA_SIZE;
+
+const getChatAvatarRenderSize = () =>
+  isAppleTouchDevice() || isCompactViewport()
+    ? CHAT_MOBILE_AVATAR_SIZE
+    : CHAT_DESKTOP_AVATAR_SIZE;
+
+const getChatRenderPixelRatio = () =>
+  isAppleTouchDevice() ? 0.9 : CHAT_RENDER_PIXEL_RATIO;
 
 const loadTasksVisionModule = async () => {
   if (!tasksVisionModulePromise) {
@@ -80,6 +114,7 @@ export const useChatStore = defineStore('chat', {
     leavingSession: false,
     soloMode: false,
     liveKitQuotaModal: false,
+    trackingDebugPreviewEnabled: false,
     debugMessages: [],
   }),
   getters: {
@@ -182,10 +217,18 @@ export const useChatStore = defineStore('chat', {
       this.motionFaceCount = 0;
       this.motionPoseCount = 0;
       this.holisticTrackingLogged = false;
+      this.refreshTrackingDebugPreviewFlag();
 
       if (typeof window !== "undefined") {
         window.__UKM_CHAT_DEBUG__ = [];
       }
+    },
+    refreshTrackingDebugPreviewFlag() {
+      this.trackingDebugPreviewEnabled =
+        typeof window !== "undefined" &&
+        window.localStorage.getItem("ukm-chat-debug-preview") === "1";
+
+      return this.trackingDebugPreviewEnabled;
     },
 
     getTime() {
@@ -260,10 +303,23 @@ export const useChatStore = defineStore('chat', {
         testVideo.srcObject = null;
       }
 
-      const guidesCanvas = document.querySelector("canvas.guides");
-      if (guidesCanvas) {
-        const canvasCtx = guidesCanvas.getContext("2d");
-        canvasCtx?.clearRect(0, 0, guidesCanvas.width, guidesCanvas.height);
+      const {
+        primaryCanvas,
+        debugCanvas,
+        debugVideo,
+      } = this.getTrackingPreviewElements();
+
+      for (const canvasElement of [primaryCanvas, debugCanvas]) {
+        if (!canvasElement) {
+          continue;
+        }
+
+        const canvasCtx = canvasElement.getContext("2d");
+        canvasCtx?.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      }
+
+      if (debugVideo?.srcObject) {
+        debugVideo.srcObject = null;
       }
 
       this.avatarScene = null;
@@ -274,13 +330,23 @@ export const useChatStore = defineStore('chat', {
       let mediaStream = null;
       let animationFrameId = null;
       let active = false;
+      let lastHandledAt = 0;
+      const minFrameInterval = frameHandler
+        ? 1000 / CHAT_MOTION_PROCESS_FPS
+        : 0;
 
-      const tick = async () => {
+      const tick = async (now = performance.now()) => {
         if (!active) {
           return;
         }
 
-        if (frameHandler) {
+        if (typeof document !== "undefined" && document.hidden) {
+          animationFrameId = window.requestAnimationFrame(tick);
+          return;
+        }
+
+        if (frameHandler && now - lastHandledAt >= minFrameInterval) {
+          lastHandledAt = now;
           await frameHandler();
         }
 
@@ -291,11 +357,18 @@ export const useChatStore = defineStore('chat', {
         start: async () => {
           active = true;
           this.prepareVideoElement(videoElement);
+          const cameraSize = getTrackingCameraSize();
           mediaStream = await navigator.mediaDevices.getUserMedia({
             audio: false,
             video: {
-              width: 640,
-              height: 480,
+              width: {
+                ideal: cameraSize.width,
+                max: CHAT_DESKTOP_CAMERA_SIZE.width,
+              },
+              height: {
+                ideal: cameraSize.height,
+                max: CHAT_DESKTOP_CAMERA_SIZE.height,
+              },
               facingMode: "user",
             },
           });
@@ -324,6 +397,19 @@ export const useChatStore = defineStore('chat', {
     },
     createPassiveCamera(videoElement) {
       return this.createTrackingCamera(videoElement, null);
+    },
+    getTrackingPreviewElements() {
+      return {
+        primaryPreview: document.querySelector(".tracking-preview-primary"),
+        primaryVideo: document.querySelector(".tracking-primary-video"),
+        primaryPassiveVideo: document.querySelector(
+          ".tracking-primary-video-passive"
+        ),
+        primaryCanvas: document.querySelector("canvas.tracking-primary-canvas"),
+        debugPreview: document.querySelector(".tracking-preview-debug"),
+        debugVideo: document.querySelector(".tracking-debug-video"),
+        debugCanvas: document.querySelector("canvas.tracking-debug-canvas"),
+      };
     },
     prepareVideoElement(videoElement, options = {}) {
       if (!videoElement) {
@@ -380,6 +466,89 @@ export const useChatStore = defineStore('chat', {
         videoElement.addEventListener("playing", handleReady);
         handleReady();
       });
+    },
+    async syncTrackingDebugStream(sourceVideoElement) {
+      const debugEnabled = this.refreshTrackingDebugPreviewFlag();
+      const { debugVideo } = this.getTrackingPreviewElements();
+
+      if (!debugEnabled) {
+        if (debugVideo?.srcObject) {
+          debugVideo.srcObject = null;
+        }
+        return;
+      }
+
+      if (!sourceVideoElement?.srcObject || !debugVideo) {
+        return;
+      }
+
+      this.prepareVideoElement(debugVideo);
+      if (debugVideo.srcObject !== sourceVideoElement.srcObject) {
+        debugVideo.srcObject = sourceVideoElement.srcObject;
+      }
+
+      try {
+        await debugVideo.play();
+      } catch (error) {
+        console.warn("디버그 프리뷰 재생 요청에 실패했습니다.", error);
+      }
+    },
+    syncTrackingPreviewAspectRatio(videoWidth, videoHeight) {
+      if (!videoWidth || !videoHeight) {
+        return;
+      }
+
+      const aspectRatio = `${videoWidth} / ${videoHeight}`;
+      const { primaryPreview, debugPreview } = this.getTrackingPreviewElements();
+
+      if (primaryPreview) {
+        primaryPreview.style.aspectRatio = aspectRatio;
+      }
+
+      if (debugPreview) {
+        debugPreview.style.aspectRatio = aspectRatio;
+      }
+    },
+    updateTrackingPreviewVisibility(trackingActive) {
+      const shouldShowGuides =
+        trackingActive && this.shouldRenderMotionGuides();
+      const debugEnabled = this.refreshTrackingDebugPreviewFlag();
+      const {
+        debugPreview,
+        primaryVideo,
+        primaryPassiveVideo,
+        primaryCanvas,
+        debugVideo,
+        debugCanvas,
+      } = this.getTrackingPreviewElements();
+
+      if (primaryVideo) {
+        primaryVideo.style.display = trackingActive ? "block" : "none";
+        primaryVideo.style.visibility = shouldShowGuides ? "hidden" : "visible";
+      }
+
+      if (primaryPassiveVideo) {
+        primaryPassiveVideo.style.display = trackingActive ? "none" : "block";
+      }
+
+      if (primaryCanvas) {
+        primaryCanvas.style.display = shouldShowGuides ? "block" : "none";
+      }
+
+      if (debugVideo) {
+        debugVideo.style.display =
+          trackingActive && debugEnabled ? "block" : "none";
+        debugVideo.style.visibility = "visible";
+      }
+
+      if (debugCanvas) {
+        debugCanvas.style.display =
+          trackingActive && debugEnabled ? "block" : "none";
+      }
+
+      if (debugPreview) {
+        debugPreview.style.display = debugEnabled ? "block" : "none";
+      }
     },
     getPreferredHolisticDelegate() {
       return "CPU";
@@ -483,9 +652,14 @@ export const useChatStore = defineStore('chat', {
 
       //three
       const scene = new THREE.Scene();
-      const renderer = new THREE.WebGLRenderer({ alpha: true });
-      renderer.setSize(640, 480);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      const renderer = new THREE.WebGLRenderer({
+        alpha: true,
+        antialias: true,
+        powerPreference: "high-performance",
+      });
+      const avatarRenderSize = getChatAvatarRenderSize();
+      renderer.setSize(avatarRenderSize.width, avatarRenderSize.height);
+      renderer.setPixelRatio(getChatRenderPixelRatio());
       renderer.domElement.id = "avatarCanvas" + useMainStore().option.matchingRoom;
 
       const myVideoContainer = document.getElementById("my-video");
@@ -501,29 +675,14 @@ export const useChatStore = defineStore('chat', {
       // camera
       const orbitCamera = new THREE.PerspectiveCamera(
         75,
-        640 / 480,
+        avatarRenderSize.width / avatarRenderSize.height,
         0.1,
         1000
       );
       orbitCamera.position.set(0.0, 1.4, 0.7);
-
-      // controls
-      const orbitControls = new OrbitControls.OrbitControls(
-        orbitCamera,
-        renderer.domElement
-      );
-      orbitControls.enableDamping = true;
-      orbitControls.target.set(0.0, 1.4, 0.0);
-      orbitControls.enablePan = false;
-      orbitControls.maxDistance = 1;
-      orbitControls.minDistance = 0.5;
-      orbitControls.minPolarAngle = 1;
-      orbitControls.maxPolarAngle = 2.5;
-      orbitControls.minAzimuthAngle = -1;
-      orbitControls.maxAzimuthAngle = 1;
       this.avatarRenderer = markRaw(renderer);
       this.avatarScene = markRaw(scene);
-      this.avatarOrbitControls = markRaw(orbitControls);
+      this.avatarOrbitControls = null;
 
       // light
       const light = new THREE.DirectionalLight(0xffffff);
@@ -532,16 +691,29 @@ export const useChatStore = defineStore('chat', {
       scene.background = new THREE.Color(0x252525);
 
       // Main Render Loop
-      const clock = new THREE.Clock();
+      let lastFrameAt = performance.now();
+      let lastRenderAt = 0;
+      const renderFrameInterval = 1000 / CHAT_RENDER_FPS;
 
-      const animate = () => {
+      const animate = (now = 0) => {
         this.avatarAnimationFrameId = requestAnimationFrame(animate);
-        orbitControls.update();
+
+        if (typeof document !== "undefined" && document.hidden) {
+          lastFrameAt = now;
+          lastRenderAt = now;
+          return;
+        }
+
+        if (now - lastRenderAt < renderFrameInterval) {
+          return;
+        }
+        lastRenderAt = now;
 
         if (currentVrm) {
-          // Update model to render physics
-          currentVrm.update(clock.getDelta());
+          const deltaSeconds = Math.min((now - lastFrameAt) / 1000, 1 / 24);
+          currentVrm.update(deltaSeconds);
         }
+        lastFrameAt = now;
         renderer.render(scene, orbitCamera);
       };
       animate();
@@ -619,6 +791,13 @@ export const useChatStore = defineStore('chat', {
           }
         );
       });
+    },
+    shouldRenderMotionGuides() {
+      if (typeof window === "undefined") {
+        return true;
+      }
+
+      return window.localStorage.getItem("ukm-motion-guides") !== "0";
     },
 
     async startHolistic() {
@@ -821,14 +1000,21 @@ export const useChatStore = defineStore('chat', {
       };
 
       /* SETUP HOLISTIC LANDMARKER INSTANCE */
-      let videoElement = await this.waitForDomElement(".input_video"),
-        guideCanvas = await this.waitForDomElement("canvas.guides");
-      const inputVideoAlt = document.querySelector(".input_video2");
+      const videoElement = await this.waitForDomElement(".tracking-primary-video");
+      const guideCanvas = await this.waitForDomElement(
+        "canvas.tracking-primary-canvas"
+      );
+      const {
+        primaryPassiveVideo: inputVideoAlt,
+        debugVideo,
+        debugCanvas,
+      } = this.getTrackingPreviewElements();
       this.prepareVideoElement(videoElement);
       this.prepareVideoElement(inputVideoAlt);
+      this.prepareVideoElement(debugVideo);
       this.logDebug("startHolistic:domReady", {
-        videoClass: "input_video",
-        guideCanvasClass: "guides",
+        videoClass: "tracking-primary-video",
+        guideCanvasClass: "tracking-primary-canvas",
       });
 
       const normalizeHolisticResult = (result) => ({
@@ -840,37 +1026,188 @@ export const useChatStore = defineStore('chat', {
       });
       let firstHolisticFrameLogged = false;
 
+      const getDrawRect = (sourceWidth, sourceHeight, targetWidth, targetHeight) => {
+        if (!sourceWidth || !sourceHeight || !targetWidth || !targetHeight) {
+          return {
+            drawX: 0,
+            drawY: 0,
+            drawWidth: targetWidth || 0,
+            drawHeight: targetHeight || 0,
+          };
+        }
+
+        const sourceAspect = sourceWidth / sourceHeight;
+        const targetAspect = targetWidth / targetHeight;
+
+        if (sourceAspect > targetAspect) {
+          const drawWidth = targetWidth;
+          const drawHeight = drawWidth / sourceAspect;
+          return {
+            drawX: 0,
+            drawY: (targetHeight - drawHeight) / 2,
+            drawWidth,
+            drawHeight,
+          };
+        }
+
+        const drawHeight = targetHeight;
+        const drawWidth = drawHeight * sourceAspect;
+        return {
+          drawX: (targetWidth - drawWidth) / 2,
+          drawY: 0,
+          drawWidth,
+          drawHeight,
+        };
+      };
+
+      const drawVideoFrameIntoCanvas = (
+        canvasCtx,
+        sourceVideo,
+        targetCanvas,
+        options = {}
+      ) => {
+        const { mirror = true } = options;
+        const { drawX, drawY, drawWidth, drawHeight } = getDrawRect(
+          sourceVideo.videoWidth,
+          sourceVideo.videoHeight,
+          targetCanvas.width,
+          targetCanvas.height
+        );
+
+        canvasCtx.save();
+        if (mirror) {
+          canvasCtx.translate(drawX + drawWidth, drawY);
+          canvasCtx.scale(-1, 1);
+          canvasCtx.drawImage(sourceVideo, 0, 0, drawWidth, drawHeight);
+        } else {
+          canvasCtx.drawImage(sourceVideo, drawX, drawY, drawWidth, drawHeight);
+        }
+        canvasCtx.restore();
+      };
+
+      const drawLandmarkPoints = (
+        canvasCtx,
+        targetCanvas,
+        landmarks,
+        options = {}
+      ) => {
+        if (!landmarks?.length) {
+          return;
+        }
+
+        const {
+          color = "#ffffff",
+          radius = 2,
+          mirror = false,
+          sourceWidth = targetCanvas.width,
+          sourceHeight = targetCanvas.height,
+        } = options;
+
+        const { drawX, drawY, drawWidth, drawHeight } = getDrawRect(
+          sourceWidth,
+          sourceHeight,
+          targetCanvas.width,
+          targetCanvas.height
+        );
+
+        canvasCtx.fillStyle = color;
+
+        for (const landmark of landmarks) {
+          if (
+            typeof landmark?.x !== "number" ||
+            typeof landmark?.y !== "number"
+          ) {
+            continue;
+          }
+
+          const normalizedX = mirror ? 1 - landmark.x : landmark.x;
+          const x = drawX + normalizedX * drawWidth;
+          const y = drawY + landmark.y * drawHeight;
+
+          canvasCtx.beginPath();
+          canvasCtx.arc(x, y, radius, 0, Math.PI * 2);
+          canvasCtx.fill();
+        }
+      };
+
+      const drawTrackingPreviewCanvas = (
+        sourceVideo,
+        targetCanvas,
+        results,
+        options = {}
+      ) => {
+        if (!targetCanvas || !sourceVideo) {
+          return;
+        }
+
+        const { drawVideoFrame: shouldDrawVideoFrame = true, mirror = true } = options;
+
+        targetCanvas.width = sourceVideo.videoWidth;
+        targetCanvas.height = sourceVideo.videoHeight;
+        let canvasCtx = targetCanvas.getContext("2d");
+        canvasCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+        if (shouldDrawVideoFrame) {
+          drawVideoFrameIntoCanvas(canvasCtx, sourceVideo, targetCanvas, { mirror });
+        }
+        drawLandmarkPoints(canvasCtx, targetCanvas, results.faceLandmarks, {
+          color: "#55f6ff",
+          radius: 2.8,
+          mirror,
+          sourceWidth: sourceVideo.videoWidth,
+          sourceHeight: sourceVideo.videoHeight,
+        });
+        drawLandmarkPoints(canvasCtx, targetCanvas, results.bodyPoseLandmarks, {
+          color: "#ff0364",
+          radius: 2.8,
+          mirror,
+          sourceWidth: sourceVideo.videoWidth,
+          sourceHeight: sourceVideo.videoHeight,
+        });
+        drawLandmarkPoints(canvasCtx, targetCanvas, results.leftHandLandmarks, {
+          color: "#00cff7",
+          radius: 2.4,
+          mirror,
+          sourceWidth: sourceVideo.videoWidth,
+          sourceHeight: sourceVideo.videoHeight,
+        });
+        drawLandmarkPoints(canvasCtx, targetCanvas, results.rightHandLandmarks, {
+          color: "#ff0364",
+          radius: 2.4,
+          mirror,
+          sourceWidth: sourceVideo.videoWidth,
+          sourceHeight: sourceVideo.videoHeight,
+        });
+      };
+
       const drawResults = (results) => {
         if (!guideCanvas || !videoElement) {
           return;
         }
 
-        guideCanvas.width = videoElement.videoWidth;
-        guideCanvas.height = videoElement.videoHeight;
-        let canvasCtx = guideCanvas.getContext("2d");
-        canvasCtx.save();
-        canvasCtx.clearRect(0, 0, guideCanvas.width, guideCanvas.height);
-        // Use `Mediapipe` drawing functions
-        DrawConnectors.drawLandmarks(canvasCtx, results.poseLandmarks, {
-          color: "#ff0364",
-          lineWidth: 2,
-        });
-        if (results.faceLandmarks && results.faceLandmarks.length >= 473) {
-          //draw pupils
-          DrawConnectors.drawLandmarks(canvasCtx, [results.faceLandmarks[468], results.faceLandmarks[468 + 5]], {
-            color: "#ffe603",
-            lineWidth: 2,
+        const renderGuides = this.shouldRenderMotionGuides();
+
+        if (!renderGuides) {
+          this.updateTrackingPreviewVisibility(true);
+          return;
+        }
+
+        const bodyPoseLandmarks = Array.isArray(results.poseLandmarks)
+          ? results.poseLandmarks.filter((_, index) => index >= 11)
+          : [];
+        const drawPayload = {
+          ...results,
+          bodyPoseLandmarks,
+        };
+
+        this.updateTrackingPreviewVisibility(true);
+        drawTrackingPreviewCanvas(videoElement, guideCanvas, drawPayload);
+
+        if (debugCanvas) {
+          drawTrackingPreviewCanvas(videoElement, debugCanvas, drawPayload, {
+            drawVideoFrame: false,
+            mirror: false,
           });
         }
-        DrawConnectors.drawLandmarks(canvasCtx, results.leftHandLandmarks, {
-          color: "#00cff7",
-          lineWidth: 2,
-        });
-        DrawConnectors.drawLandmarks(canvasCtx, results.rightHandLandmarks, {
-          color: "#ff0364",
-          lineWidth: 2,
-        });
-        canvasCtx.restore();
       };
 
       const processHolisticFrame = async () => {
@@ -984,6 +1321,12 @@ export const useChatStore = defineStore('chat', {
       } catch (error) {
         console.warn("카메라 프리뷰 재생 요청에 실패했습니다.", error);
       }
+      this.syncTrackingPreviewAspectRatio(
+        videoElement.videoWidth,
+        videoElement.videoHeight
+      );
+      await this.syncTrackingDebugStream(videoElement);
+      this.updateTrackingPreviewVisibility(true);
       this.logDebug("startHolistic:cameraStarted", {
         readyState: videoElement.readyState,
         videoWidth: videoElement.videoWidth,
@@ -1010,7 +1353,7 @@ export const useChatStore = defineStore('chat', {
         const tracks = testVideo.srcObject.getTracks?.() || [];
         tracks.forEach((track) => track.stop());
       }
-      testVideo.srcObject = avatarCanvas.captureStream();
+      testVideo.srcObject = avatarCanvas.captureStream(CHAT_CAPTURE_FPS);
       try {
         await testVideo.play();
       } catch (error) {
@@ -1249,14 +1592,16 @@ export const useChatStore = defineStore('chat', {
       this.webSocket.send(message);
     },
 
-    motionClick() {
+    async motionClick() {
       if (!this.camera) {
         return
       }
 
       this.camera.stop();
-      const inputVideo = document.querySelector(".input_video");
-      const inputVideoAlt = document.querySelector(".input_video2");
+      const {
+        primaryVideo: inputVideo,
+        primaryPassiveVideo: inputVideoAlt,
+      } = this.getTrackingPreviewElements();
 
       if (!inputVideo || !inputVideoAlt) {
         console.warn("모션 인식 비디오 요소를 찾을 수 없습니다.");
@@ -1268,15 +1613,11 @@ export const useChatStore = defineStore('chat', {
       if (this.motionCheck == true) {
         this.motionCheck = false;
         this.systemMessagePrint("모션인식을 중지합니다.")
-        inputVideo.style.display = "none";
-        inputVideoAlt.style.display = "block";
         this.prepareVideoElement(inputVideoAlt);
         videoElement = inputVideoAlt;
       } else {
         this.motionCheck = true;
         this.systemMessagePrint("모션인식을 재시작합니다.")
-        inputVideo.style.display = "block";
-        inputVideoAlt.style.display = "none";
         this.prepareVideoElement(inputVideo);
         videoElement = inputVideo;
       }
@@ -1284,7 +1625,14 @@ export const useChatStore = defineStore('chat', {
       this.camera = this.motionCheck
         ? this.createTrackingCamera(videoElement, trackingFrameHandler)
         : this.createPassiveCamera(videoElement);
-      this.camera.start();
+      await this.camera.start();
+      await this.waitForVideoReady(videoElement);
+      await this.syncTrackingDebugStream(videoElement);
+      this.syncTrackingPreviewAspectRatio(
+        videoElement.videoWidth,
+        videoElement.videoHeight
+      );
+      this.updateTrackingPreviewVisibility(this.motionCheck);
     },
 
     heartClick() {
@@ -1317,10 +1665,9 @@ export const useChatStore = defineStore('chat', {
         motionBtn[i].disabled = true;
       }
 
-      const preview = document.querySelector(".preview");
-      if (preview) {
-        preview.remove();
-      }
+      document
+        .querySelectorAll(".tracking-preview")
+        .forEach((previewElement) => previewElement.remove());
 
       let videoElement
       if (this.mobile) {

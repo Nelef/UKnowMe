@@ -30,23 +30,29 @@
             muted
             playsinline
           ></video>
-          <div :class="['preview', { 'preview-solo': chat.soloMode }]">
+          <div
+            :class="[
+              'tracking-preview',
+              'tracking-preview-primary',
+              { 'tracking-preview-solo': chat.soloMode },
+            ]"
+          >
             <video
-              class="input_video"
+              class="tracking-primary-video"
               autoplay
               muted
               playsinline
               style="position: absolute; left: 0%"
             ></video>
             <video
-              class="input_video2"
+              class="tracking-primary-video-passive"
               autoplay
               muted
               playsinline
               style="position: absolute; left: 0%; display: none"
             ></video>
             <canvas
-              class="guides"
+              class="tracking-primary-canvas"
               style="position: absolute; left: 0%"
             ></canvas>
             <div
@@ -55,6 +61,20 @@
             >
               {{ motionStatusText }}
             </div>
+          </div>
+          <div class="tracking-preview tracking-preview-debug">
+            <video
+              class="tracking-debug-video"
+              autoplay
+              muted
+              playsinline
+              style="position: absolute; left: 0%; display: none"
+            ></video>
+            <canvas
+              class="tracking-debug-canvas"
+              style="position: absolute; left: 0%; display: none"
+            ></canvas>
+            <div class="tracking-preview-label">DEBUG</div>
           </div>
           <div>
             <p>{{ account.currentUser.nickname }}</p>
@@ -506,7 +526,7 @@ h1 {
   -webkit-transform: rotateY(180deg); /* Safari and Chrome */
   -moz-transform: rotateY(180deg); /* Firefox */
 }
-.preview {
+.tracking-preview {
   position: absolute;
   width: 30%;
   aspect-ratio: 4 / 3;
@@ -518,22 +538,53 @@ h1 {
   background: rgba(8, 10, 23, 0.78);
   box-shadow: 0px 14px 32px rgba(0, 0, 0, 0.28);
 }
-.preview.preview-solo {
+.tracking-preview-solo {
   width: min(260px, 42%);
 }
-.preview video,
-.preview .guides {
+.tracking-preview-debug {
+  display: none;
+  left: auto;
+  right: 5%;
+  width: min(220px, 28%);
+  top: 5%;
+  background: rgba(8, 10, 23, 0.38);
+}
+.tracking-preview video,
+.tracking-preview canvas {
   position: absolute;
   inset: 0;
   width: 100% !important;
   height: 100% !important;
-  object-fit: cover;
+  object-fit: contain;
+}
+.tracking-preview video {
   transform: rotateY(180deg);
   -webkit-transform: rotateY(180deg); /* Safari and Chrome */
   -moz-transform: rotateY(180deg); /* Firefox */
 }
-.preview .guides {
+.tracking-preview canvas {
   border: 0;
+  transform: none;
+  -webkit-transform: none;
+  -moz-transform: none;
+}
+.tracking-preview-debug .tracking-debug-canvas {
+  transform: rotateY(180deg);
+  -webkit-transform: rotateY(180deg);
+  -moz-transform: rotateY(180deg);
+}
+.tracking-preview-label {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(11, 13, 29, 0.72);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
 }
 .motion-status {
   position: absolute;
