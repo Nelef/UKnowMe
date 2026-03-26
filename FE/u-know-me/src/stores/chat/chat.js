@@ -16,7 +16,6 @@ import axios from 'axios'
 let currentVrm;
 let tasksVisionFilesetPromise;
 let tasksVisionModulePromise;
-let trackingFrameHandler = null;
 let trackingPreviewElementsCache = null;
 
 const PUBLIC_BASE_URL = (process.env.BASE_URL || "/").replace(/\/+$/, "");
@@ -237,9 +236,7 @@ export const useChatStore = defineStore('chat', {
       }
     },
     refreshTrackingDebugPreviewFlag() {
-      this.trackingDebugPreviewEnabled =
-        typeof window !== "undefined" &&
-        window.localStorage.getItem("ukm-chat-debug-preview") !== "0";
+      this.trackingDebugPreviewEnabled = true;
 
       return this.trackingDebugPreviewEnabled;
     },
@@ -368,7 +365,6 @@ export const useChatStore = defineStore('chat', {
 
       this.avatarScene = null;
       this.ready = false;
-      trackingFrameHandler = null;
       this.invalidateTrackingPreviewElements();
     },
     createTrackingCamera(videoElement, frameHandler) {
@@ -600,7 +596,7 @@ export const useChatStore = defineStore('chat', {
       this.setElementDisplay(primaryVideo, trackingActive ? "block" : "none");
       this.setElementVisibility(
         primaryVideo,
-        shouldShowGuides ? "hidden" : "visible"
+        "hidden"
       );
 
       this.setElementDisplay(
@@ -610,7 +606,7 @@ export const useChatStore = defineStore('chat', {
       this.setElementDisplay(primaryCanvas, shouldShowGuides ? "block" : "none");
       this.setElementDisplay(
         debugVideo,
-        trackingActive && debugEnabled ? "block" : "none"
+        debugEnabled ? "block" : "none"
       );
       this.setElementVisibility(debugVideo, "visible");
       this.setElementDisplay(
@@ -1170,6 +1166,7 @@ export const useChatStore = defineStore('chat', {
           mirror = false,
           sourceWidth = targetCanvas.width,
           sourceHeight = targetCanvas.height,
+          step = 1,
         } = options;
 
         const { drawX, drawY, drawWidth, drawHeight } = getDrawRect(
@@ -1181,7 +1178,8 @@ export const useChatStore = defineStore('chat', {
 
         canvasCtx.fillStyle = color;
 
-        for (const landmark of landmarks) {
+        for (let index = 0; index < landmarks.length; index += step) {
+          const landmark = landmarks[index];
           if (
             typeof landmark?.x !== "number" ||
             typeof landmark?.y !== "number"
@@ -1224,6 +1222,7 @@ export const useChatStore = defineStore('chat', {
           mirror,
           sourceWidth: sourceVideo.videoWidth,
           sourceHeight: sourceVideo.videoHeight,
+          step: 1,
         });
         drawLandmarkPoints(canvasCtx, targetCanvas, results.bodyPoseLandmarks, {
           color: "#ff0364",
@@ -1256,7 +1255,7 @@ export const useChatStore = defineStore('chat', {
         const renderGuides = this.shouldRenderMotionGuides();
 
         if (!renderGuides) {
-          this.updateTrackingPreviewVisibility(true);
+          this.updateTrackingPreviewVisibility(this.motionCheck);
           return;
         }
 
@@ -1269,18 +1268,25 @@ export const useChatStore = defineStore('chat', {
         };
 
         this.updateTrackingPreviewVisibility(true);
-        drawTrackingPreviewCanvas(videoElement, guideCanvas, drawPayload);
 
-        if (debugCanvas) {
-          drawTrackingPreviewCanvas(videoElement, debugCanvas, drawPayload, {
-            drawVideoFrame: false,
-            mirror: false,
-          });
+        const visibleGuideCanvas = debugCanvas || guideCanvas;
+        if (!visibleGuideCanvas) {
+          return;
         }
+
+        drawTrackingPreviewCanvas(videoElement, visibleGuideCanvas, drawPayload, {
+          drawVideoFrame: false,
+          mirror: true,
+        });
       };
 
       const processHolisticFrame = async () => {
-        if (!videoElement || videoElement.readyState < 2 || !this.holistic) {
+        if (
+          !videoElement ||
+          videoElement.readyState < 2 ||
+          !this.holistic ||
+          !this.motionCheck
+        ) {
           return;
         }
 
@@ -1361,8 +1367,6 @@ export const useChatStore = defineStore('chat', {
           this.holisticFrameInFlight = false;
         }
       };
-      trackingFrameHandler = processHolisticFrame;
-
       const preferredDelegate = this.getPreferredHolisticDelegate();
       this.logDebug("startHolistic:preferredDelegate", {
         preferredDelegate,
@@ -1667,42 +1671,15 @@ export const useChatStore = defineStore('chat', {
         return
       }
 
-      this.camera.stop();
-      const {
-        primaryVideo: inputVideo,
-        primaryPassiveVideo: inputVideoAlt,
-      } = this.getTrackingPreviewElements();
-
-      if (!inputVideo || !inputVideoAlt) {
-        console.warn("모션 인식 비디오 요소를 찾을 수 없습니다.");
-        return;
-      }
-
-      let videoElement;
-
       if (this.motionCheck == true) {
         this.motionCheck = false;
         this.systemMessagePrint("모션인식을 중지합니다.")
-        this.prepareVideoElement(inputVideoAlt);
-        videoElement = inputVideoAlt;
         this.syncMotionStatus(0, 0, true);
       } else {
         this.motionCheck = true;
         this.systemMessagePrint("모션인식을 재시작합니다.")
-        this.prepareVideoElement(inputVideo);
-        videoElement = inputVideo;
       }
 
-      this.camera = this.motionCheck
-        ? this.createTrackingCamera(videoElement, trackingFrameHandler)
-        : this.createPassiveCamera(videoElement);
-      await this.camera.start();
-      await this.waitForVideoReady(videoElement);
-      await this.syncTrackingDebugStream(videoElement);
-      this.syncTrackingPreviewAspectRatio(
-        videoElement.videoWidth,
-        videoElement.videoHeight
-      );
       this.updateTrackingPreviewVisibility(this.motionCheck);
     },
 

@@ -34,6 +34,7 @@
             :class="[
               'tracking-preview',
               'tracking-preview-primary',
+              'tracking-preview-hidden',
               { 'tracking-preview-solo': chat.soloMode },
             ]"
           >
@@ -55,26 +56,36 @@
               class="tracking-primary-canvas"
               style="position: absolute; left: 0%"
             ></canvas>
+          </div>
+          <div
+            ref="cameraPreviewShell"
+            class="tracking-preview-shell tracking-preview-debug"
+            :class="{ 'tracking-preview-solo': chat.soloMode }"
+            :style="cameraPreviewStyle"
+            @pointerdown="startCameraPreviewDrag"
+          >
+            <div class="tracking-preview tracking-preview-active">
+              <video
+                class="tracking-debug-video"
+                autoplay
+                muted
+                playsinline
+                style="position: absolute; left: 0%; display: none"
+              ></video>
+              <canvas
+                class="tracking-debug-canvas"
+                style="position: absolute; left: 0%; display: none"
+              ></canvas>
+              <div class="tracking-preview-label">
+                {{ chat.holisticDelegate || "CPU" }}
+              </div>
+            </div>
             <div
               class="motion-status"
               :class="{ active: chat.motionFaceCount > 0 || chat.motionPoseCount > 0 }"
             >
               {{ motionStatusText }}
             </div>
-          </div>
-          <div class="tracking-preview tracking-preview-debug">
-            <video
-              class="tracking-debug-video"
-              autoplay
-              muted
-              playsinline
-              style="position: absolute; left: 0%; display: none"
-            ></video>
-            <canvas
-              class="tracking-debug-canvas"
-              style="position: absolute; left: 0%; display: none"
-            ></canvas>
-            <div class="tracking-preview-label">DEBUG</div>
           </div>
           <div>
             <p>{{ account.currentUser.nickname }}</p>
@@ -155,6 +166,11 @@ export default {
 
       return "얼굴을 카메라 중앙에 맞춰주세요";
     },
+    cameraPreviewStyle() {
+      return {
+        transform: `translate(${this.cameraPreviewOffset.x}px, ${this.cameraPreviewOffset.y}px)`,
+      };
+    },
   },
 
   data() {
@@ -167,6 +183,8 @@ export default {
       beforeUnloadHandler: null,
       remoteParticipants: [],
       remoteParticipantSignature: "",
+      cameraPreviewOffset: { x: 0, y: 0 },
+      cameraPreviewDragState: null,
     };
   },
   mounted() {
@@ -198,6 +216,9 @@ export default {
     if (this.beforeUnloadHandler) {
       window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     }
+    window.removeEventListener("pointermove", this.onCameraPreviewDrag);
+    window.removeEventListener("pointerup", this.stopCameraPreviewDrag);
+    window.removeEventListener("pointercancel", this.stopCameraPreviewDrag);
   },
   beforeRouteLeave(to, from, next) {
     this.chat.leaveSession({ navigate: false }).finally(() => next());
@@ -456,6 +477,75 @@ export default {
         candidates.includes("concurrent")
       );
     },
+    startCameraPreviewDrag(event) {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      const previewShell = this.$refs.cameraPreviewShell;
+      const container = document.getElementById("my-video");
+      if (!previewShell || !container) {
+        return;
+      }
+
+      this.cameraPreviewDragState = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        baseX: this.cameraPreviewOffset.x,
+        baseY: this.cameraPreviewOffset.y,
+      };
+
+      previewShell.setPointerCapture?.(event.pointerId);
+      window.addEventListener("pointermove", this.onCameraPreviewDrag);
+      window.addEventListener("pointerup", this.stopCameraPreviewDrag);
+      window.addEventListener("pointercancel", this.stopCameraPreviewDrag);
+    },
+    onCameraPreviewDrag(event) {
+      const dragState = this.cameraPreviewDragState;
+      const previewShell = this.$refs.cameraPreviewShell;
+      const container = document.getElementById("my-video");
+      if (
+        !dragState ||
+        dragState.pointerId !== event.pointerId ||
+        !previewShell ||
+        !container
+      ) {
+        return;
+      }
+
+      const nextX = dragState.baseX + (event.clientX - dragState.startX);
+      const nextY = dragState.baseY + (event.clientY - dragState.startY);
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
+      const previewWidth = previewShell.offsetWidth;
+      const previewHeight = previewShell.offsetHeight;
+      const baseLeft = containerWidth * 0.05;
+      const baseTop = containerHeight * 0.05;
+      const minX = -baseLeft + 8;
+      const maxX = containerWidth - previewWidth - baseLeft - 8;
+      const minY = -baseTop + 8;
+      const maxY = containerHeight - previewHeight - baseTop - 8;
+
+      this.cameraPreviewOffset = {
+        x: Math.min(Math.max(nextX, minX), maxX),
+        y: Math.min(Math.max(nextY, minY), maxY),
+      };
+    },
+    stopCameraPreviewDrag(event) {
+      if (
+        this.cameraPreviewDragState &&
+        event?.pointerId != null &&
+        this.cameraPreviewDragState.pointerId !== event.pointerId
+      ) {
+        return;
+      }
+
+      this.cameraPreviewDragState = null;
+      window.removeEventListener("pointermove", this.onCameraPreviewDrag);
+      window.removeEventListener("pointerup", this.stopCameraPreviewDrag);
+      window.removeEventListener("pointercancel", this.stopCameraPreviewDrag);
+    },
   },
 };
 </script>
@@ -542,27 +632,40 @@ h1 {
   -moz-transform: rotateY(180deg); /* Firefox */
 }
 .tracking-preview {
-  position: absolute;
-  width: 30%;
+  position: relative;
+  width: 100%;
   aspect-ratio: 4 / 3;
-  left: 5%;
-  top: 5%;
-  z-index: 2;
   overflow: hidden;
   border-radius: 20px;
   background: rgba(8, 10, 23, 0.78);
   box-shadow: 0px 14px 32px rgba(0, 0, 0, 0.28);
 }
+.tracking-preview-shell {
+  position: absolute;
+  width: 30%;
+  left: 5%;
+  top: 5%;
+  z-index: 2;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
 .tracking-preview-solo {
   width: min(260px, 42%);
 }
+.tracking-preview-hidden {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
 .tracking-preview-debug {
-  display: none;
-  left: auto;
-  right: 5%;
-  width: min(220px, 28%);
-  top: 5%;
-  background: rgba(8, 10, 23, 0.38);
+  display: block;
+  width: min(240px, 30%);
 }
 .tracking-preview video,
 .tracking-preview canvas {
@@ -572,21 +675,16 @@ h1 {
   height: 100% !important;
   object-fit: contain;
 }
-.tracking-preview video {
+.tracking-preview-active video {
   transform: rotateY(180deg);
   -webkit-transform: rotateY(180deg); /* Safari and Chrome */
   -moz-transform: rotateY(180deg); /* Firefox */
 }
-.tracking-preview canvas {
+.tracking-preview-active canvas {
   border: 0;
   transform: none;
   -webkit-transform: none;
   -moz-transform: none;
-}
-.tracking-preview-debug .tracking-debug-canvas {
-  transform: rotateY(180deg);
-  -webkit-transform: rotateY(180deg);
-  -moz-transform: rotateY(180deg);
 }
 .tracking-preview-label {
   position: absolute;
@@ -602,11 +700,7 @@ h1 {
   letter-spacing: 0.05em;
 }
 .motion-status {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  z-index: 3;
+  margin-top: 10px;
   padding: 8px 12px;
   border-radius: 999px;
   background: rgba(11, 13, 29, 0.72);
