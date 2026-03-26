@@ -1,6 +1,6 @@
 <template>
   <div style="height: var(--chat-sub-size)"><!-- 형상 유지를 위한 div --></div>
-  <div class="chat-sub">
+  <div class="chat-sub" ref="chatSubRoot">
     <div class="chat-keyword-container">
       <div class="keyword-box">
         <div class="keyword-content"></div>
@@ -86,10 +86,14 @@
       </div>
     </div>
   </div>
-  <div class="chat-sub-mobile">
+  <div class="chat-sub-mobile" ref="chatSubMobileRoot">
     <div class="chat-keyword-container">
       <div class="keyword-box">
-        <div class="keyword-content-mobile" @click="chatSubMobileClick()"></div>
+        <div
+          class="keyword-content-mobile"
+          ref="keywordContentMobile"
+          @click="chatSubMobileClick()"
+        ></div>
       </div>
     </div>
     <div class="chat-sub-mobile-child">
@@ -179,7 +183,7 @@
 
 <script>
 import { useChatStore } from "@/stores/chat/chat";
-import { onBeforeUnmount, onMounted } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useMainStore } from "@/stores/main/main";
 
 export default {
@@ -192,64 +196,69 @@ export default {
   setup() {
     const chat = useChatStore();
     const main = useMainStore();
+    const chatSubRoot = ref(null);
+    const chatSubMobileRoot = ref(null);
+    const keywordContentMobile = ref(null);
     let mediaViewContent = null;
     let viewChangeHandler = null;
     let initialLayoutTimerId = null;
 
     onMounted(() => {
-      var chatSub = document.querySelector(".chat-sub");
-      var chatSubMobile = document.querySelector(".chat-sub-mobile");
-      const renameAvatarCanvas = (fromId, toId) => {
-        const avatarCanvas = document.getElementById(fromId);
-        if (avatarCanvas) {
-          avatarCanvas.id = toId;
-        }
-      };
-
-      const applyResponsiveLayout = (isMobile) => {
-        if (!chatSub || !chatSubMobile) {
-          return;
-        }
-
-        if (isMobile) {
-          chatSub.style.bottom = "-200px";
-          chatSubMobile.style.left = "50%";
-          document.documentElement.style.setProperty(
-            "--chat-sub-size",
-            "400px"
-          );
-
-          if (main.option.matchingRoom == "1") {
-            document.documentElement.style.setProperty("--video-size", "1");
-            chat.mobile = true;
-
-            renameAvatarCanvas("avatarCanvas1", "avatarCanvas2");
+      nextTick(() => {
+        var chatSub = chatSubRoot.value;
+        var chatSubMobile = chatSubMobileRoot.value;
+        const renameAvatarCanvas = (fromId, toId) => {
+          const avatarCanvas = document.getElementById(fromId);
+          if (avatarCanvas) {
+            avatarCanvas.id = toId;
           }
-        } else {
-          chatSub.style.bottom = "0px";
-          chatSubMobile.style.left = "-300px";
-          document.documentElement.style.setProperty(
-            "--chat-sub-size",
-            "200px"
-          );
-          if (main.option.matchingRoom == "1") {
-            document.documentElement.style.setProperty("--video-size", "2");
-            chat.mobile = false;
+        };
 
-            renameAvatarCanvas("avatarCanvas2", "avatarCanvas1");
+        const applyResponsiveLayout = (isMobile) => {
+          if (!chatSub || !chatSubMobile) {
+            return;
           }
-        }
-      };
 
-      initialLayoutTimerId = window.setTimeout(() => {
-        applyResponsiveLayout(window.innerWidth < 1120);
-      }, 2000);
+          if (isMobile) {
+            chatSub.style.bottom = "-200px";
+            chatSubMobile.style.left = "50%";
+            document.documentElement.style.setProperty(
+              "--chat-sub-size",
+              "400px"
+            );
 
-      mediaViewContent = window.matchMedia(`(max-width: 1120px)`);
-      viewChangeHandler = (event) => {
-        applyResponsiveLayout(event.matches);
-      };
-      mediaViewContent.addEventListener("change", viewChangeHandler);
+            if (main.option.matchingRoom == "1") {
+              document.documentElement.style.setProperty("--video-size", "1");
+              chat.mobile = true;
+
+              renameAvatarCanvas("avatarCanvas1", "avatarCanvas2");
+            }
+          } else {
+            chatSub.style.bottom = "0px";
+            chatSubMobile.style.left = "-300px";
+            document.documentElement.style.setProperty(
+              "--chat-sub-size",
+              "200px"
+            );
+            if (main.option.matchingRoom == "1") {
+              document.documentElement.style.setProperty("--video-size", "2");
+              chat.mobile = false;
+
+              renameAvatarCanvas("avatarCanvas2", "avatarCanvas1");
+            }
+          }
+        };
+
+        initialLayoutTimerId = window.setTimeout(() => {
+          applyResponsiveLayout(window.innerWidth < 1120);
+        }, 2000);
+
+        mediaViewContent = window.matchMedia(`(max-width: 1120px)`);
+        viewChangeHandler = (event) => {
+          applyResponsiveLayout(event.matches);
+        };
+        mediaViewContent.addEventListener("change", viewChangeHandler);
+      });
     });
 
     onBeforeUnmount(() => {
@@ -262,7 +271,13 @@ export default {
       }
     });
 
-    return { chat, main };
+    return {
+      chat,
+      main,
+      chatSubRoot,
+      chatSubMobileRoot,
+      keywordContentMobile,
+    };
   },
   methods: {
     love() {
@@ -306,13 +321,17 @@ export default {
       this.chat.accuseBtn = 1;
     },
     chatSubMobileClick() {
+      const keywordContentMobile = this.keywordContentMobile;
+      if (!keywordContentMobile) {
+        return;
+      }
+
       if (!this.chatExpand) {
         this.chatExpand = true;
-        document.querySelector(".keyword-content-mobile").style.height =
-          "calc(100vh - 400px)";
+        keywordContentMobile.style.height = "calc(100vh - 400px)";
       } else {
         this.chatExpand = false;
-        document.querySelector(".keyword-content-mobile").style.height = "50px";
+        keywordContentMobile.style.height = "50px";
       }
     },
   },

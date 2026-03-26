@@ -166,6 +166,7 @@ export default {
       readyIntervalId: null,
       beforeUnloadHandler: null,
       remoteParticipants: [],
+      remoteParticipantSignature: "",
     };
   },
   mounted() {
@@ -204,6 +205,8 @@ export default {
   methods: {
     async joinSession() {
       try {
+        this.chat.refreshTrackingDebugPreviewFlag();
+        this.chat.refreshDebugLoggingFlag();
         this.chat.logDebug("joinSession:start", {
           route: this.$route.fullPath,
           sessionName: this.SessionName,
@@ -334,12 +337,14 @@ export default {
       room.on(RoomEvent.ParticipantDisconnected, syncParticipants);
       room.on(RoomEvent.Disconnected, () => {
         this.remoteParticipants = [];
+        this.remoteParticipantSignature = "";
       });
     },
 
     syncRemoteParticipants() {
       if (!this.chat.room) {
         this.remoteParticipants = [];
+        this.remoteParticipantSignature = "";
         return;
       }
 
@@ -372,9 +377,19 @@ export default {
         });
       });
 
-      this.remoteParticipants = participants.filter(
+      const nextParticipants = participants.filter(
         participant => participant.videoTrack || participant.audioTrack
       );
+      const nextSignature = nextParticipants
+        .map((participant) => participant.renderKey)
+        .join("|");
+
+      if (nextSignature === this.remoteParticipantSignature) {
+        return;
+      }
+
+      this.remoteParticipantSignature = nextSignature;
+      this.remoteParticipants = nextParticipants;
 
       this.chat.logDebug("syncRemoteParticipants", {
         count: this.remoteParticipants.length,

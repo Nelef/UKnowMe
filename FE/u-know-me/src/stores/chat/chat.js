@@ -17,6 +17,7 @@ let currentVrm;
 let tasksVisionFilesetPromise;
 let tasksVisionModulePromise;
 let trackingFrameHandler = null;
+let trackingPreviewElementsCache = null;
 
 const PUBLIC_BASE_URL = (process.env.BASE_URL || "/").replace(/\/+$/, "");
 const buildPublicAssetUrl = (assetPath) =>
@@ -83,6 +84,7 @@ export const useChatStore = defineStore('chat', {
     loadingProgress: 0,
     motionFaceCount: 0,
     motionPoseCount: 0,
+    lastMotionStatusSyncAt: 0,
     webSocket: null,
     room: undefined,
     participantToken: '',
@@ -115,6 +117,7 @@ export const useChatStore = defineStore('chat', {
     soloMode: false,
     liveKitQuotaModal: false,
     trackingDebugPreviewEnabled: true,
+    debugLoggingEnabled: false,
     debugMessages: [],
   }),
   getters: {
@@ -122,6 +125,10 @@ export const useChatStore = defineStore('chat', {
   },
   actions: {
     logDebug(stage, details = {}) {
+      if (!this.debugLoggingEnabled) {
+        return;
+      }
+
       const entry = {
         at: new Date().toISOString(),
         stage,
@@ -134,10 +141,13 @@ export const useChatStore = defineStore('chat', {
       }
 
       if (typeof window !== "undefined") {
-        window.__UKM_CHAT_DEBUG__ = this.debugMessages.slice();
+        window.__UKM_CHAT_DEBUG__ = this.debugMessages;
       }
 
       console.log("[UKM-CHAT]", stage, details);
+    },
+    invalidateTrackingPreviewElements() {
+      trackingPreviewElementsCache = null;
     },
     async waitForDomElement(selector, options = {}) {
       const {
@@ -216,8 +226,11 @@ export const useChatStore = defineStore('chat', {
       this.debugMessages = [];
       this.motionFaceCount = 0;
       this.motionPoseCount = 0;
+      this.lastMotionStatusSyncAt = 0;
       this.holisticTrackingLogged = false;
       this.refreshTrackingDebugPreviewFlag();
+      this.refreshDebugLoggingFlag();
+      this.invalidateTrackingPreviewElements();
 
       if (typeof window !== "undefined") {
         window.__UKM_CHAT_DEBUG__ = [];
@@ -229,6 +242,37 @@ export const useChatStore = defineStore('chat', {
         window.localStorage.getItem("ukm-chat-debug-preview") !== "0";
 
       return this.trackingDebugPreviewEnabled;
+    },
+    refreshDebugLoggingFlag() {
+      this.debugLoggingEnabled =
+        typeof window !== "undefined" &&
+        window.localStorage.getItem("ukm-chat-debug-log") === "1";
+
+      return this.debugLoggingEnabled;
+    },
+    syncMotionStatus(faceCount, poseCount, force = false) {
+      const nextFaceCount = faceCount || 0;
+      const nextPoseCount = poseCount || 0;
+      const now =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      const trackingPresenceChanged =
+        (this.motionFaceCount > 0) !== (nextFaceCount > 0) ||
+        (this.motionPoseCount > 0) !== (nextPoseCount > 0);
+      const countsChanged =
+        this.motionFaceCount !== nextFaceCount ||
+        this.motionPoseCount !== nextPoseCount;
+
+      if (
+        !force &&
+        !trackingPresenceChanged &&
+        (!countsChanged || now - this.lastMotionStatusSyncAt < 250)
+      ) {
+        return;
+      }
+
+      this.motionFaceCount = nextFaceCount;
+      this.motionPoseCount = nextPoseCount;
+      this.lastMotionStatusSyncAt = now;
     },
 
     getTime() {
@@ -325,6 +369,7 @@ export const useChatStore = defineStore('chat', {
       this.avatarScene = null;
       this.ready = false;
       trackingFrameHandler = null;
+      this.invalidateTrackingPreviewElements();
     },
     createTrackingCamera(videoElement, frameHandler) {
       let mediaStream = null;
@@ -399,7 +444,17 @@ export const useChatStore = defineStore('chat', {
       return this.createTrackingCamera(videoElement, null);
     },
     getTrackingPreviewElements() {
-      return {
+      const cacheIsValid =
+        trackingPreviewElementsCache &&
+        Object.values(trackingPreviewElementsCache).every(
+          (element) => !element || element.isConnected
+        );
+
+      if (cacheIsValid) {
+        return trackingPreviewElementsCache;
+      }
+
+      trackingPreviewElementsCache = {
         primaryPreview: document.querySelector(".tracking-preview-primary"),
         primaryVideo: document.querySelector(".tracking-primary-video"),
         primaryPassiveVideo: document.querySelector(
@@ -410,6 +465,8 @@ export const useChatStore = defineStore('chat', {
         debugVideo: document.querySelector(".tracking-debug-video"),
         debugCanvas: document.querySelector("canvas.tracking-debug-canvas"),
       };
+
+      return trackingPreviewElementsCache;
     },
     prepareVideoElement(videoElement, options = {}) {
       if (!videoElement) {
@@ -502,12 +559,30 @@ export const useChatStore = defineStore('chat', {
       const { primaryPreview, debugPreview } = this.getTrackingPreviewElements();
 
       if (primaryPreview) {
-        primaryPreview.style.aspectRatio = aspectRatio;
+        if (primaryPreview.style.aspectRatio !== aspectRatio) {
+          primaryPreview.style.aspectRatio = aspectRatio;
+        }
       }
 
       if (debugPreview) {
-        debugPreview.style.aspectRatio = aspectRatio;
+        if (debugPreview.style.aspectRatio !== aspectRatio) {
+          debugPreview.style.aspectRatio = aspectRatio;
+        }
       }
+    },
+    setElementDisplay(element, nextDisplay) {
+      if (!element || element.style.display === nextDisplay) {
+        return;
+      }
+
+      element.style.display = nextDisplay;
+    },
+    setElementVisibility(element, nextVisibility) {
+      if (!element || element.style.visibility === nextVisibility) {
+        return;
+      }
+
+      element.style.visibility = nextVisibility;
     },
     updateTrackingPreviewVisibility(trackingActive) {
       const shouldShowGuides =
@@ -522,33 +597,27 @@ export const useChatStore = defineStore('chat', {
         debugCanvas,
       } = this.getTrackingPreviewElements();
 
-      if (primaryVideo) {
-        primaryVideo.style.display = trackingActive ? "block" : "none";
-        primaryVideo.style.visibility = shouldShowGuides ? "hidden" : "visible";
-      }
+      this.setElementDisplay(primaryVideo, trackingActive ? "block" : "none");
+      this.setElementVisibility(
+        primaryVideo,
+        shouldShowGuides ? "hidden" : "visible"
+      );
 
-      if (primaryPassiveVideo) {
-        primaryPassiveVideo.style.display = trackingActive ? "none" : "block";
-      }
-
-      if (primaryCanvas) {
-        primaryCanvas.style.display = shouldShowGuides ? "block" : "none";
-      }
-
-      if (debugVideo) {
-        debugVideo.style.display =
-          trackingActive && debugEnabled ? "block" : "none";
-        debugVideo.style.visibility = "visible";
-      }
-
-      if (debugCanvas) {
-        debugCanvas.style.display =
-          trackingActive && debugEnabled ? "block" : "none";
-      }
-
-      if (debugPreview) {
-        debugPreview.style.display = debugEnabled ? "block" : "none";
-      }
+      this.setElementDisplay(
+        primaryPassiveVideo,
+        trackingActive ? "none" : "block"
+      );
+      this.setElementDisplay(primaryCanvas, shouldShowGuides ? "block" : "none");
+      this.setElementDisplay(
+        debugVideo,
+        trackingActive && debugEnabled ? "block" : "none"
+      );
+      this.setElementVisibility(debugVideo, "visible");
+      this.setElementDisplay(
+        debugCanvas,
+        trackingActive && debugEnabled ? "block" : "none"
+      );
+      this.setElementDisplay(debugPreview, debugEnabled ? "block" : "none");
     },
     getPreferredHolisticDelegate() {
       return "CPU";
@@ -1243,27 +1312,28 @@ export const useChatStore = defineStore('chat', {
         }
         try {
           const normalizedResult = normalizeHolisticResult(result);
-          this.motionFaceCount = normalizedResult.faceLandmarks?.length || 0;
-          this.motionPoseCount = normalizedResult.poseLandmarks?.length || 0;
+          const faceCount = normalizedResult.faceLandmarks?.length || 0;
+          const poseCount = normalizedResult.poseLandmarks?.length || 0;
+          this.syncMotionStatus(faceCount, poseCount);
           if (!firstHolisticFrameLogged) {
             firstHolisticFrameLogged = true;
             this.logDebug("startHolistic:firstDetectSuccess", {
               readyState: videoElement.readyState,
               videoWidth: videoElement.videoWidth,
               videoHeight: videoElement.videoHeight,
-              faceCount: this.motionFaceCount,
-              poseCount: this.motionPoseCount,
+              faceCount,
+              poseCount,
             });
           }
 
           if (
             !this.holisticTrackingLogged &&
-            (this.motionFaceCount > 0 || this.motionPoseCount > 0)
+            (faceCount > 0 || poseCount > 0)
           ) {
             this.holisticTrackingLogged = true;
             this.logDebug("startHolistic:trackingDetected", {
-              faceCount: this.motionFaceCount,
-              poseCount: this.motionPoseCount,
+              faceCount,
+              poseCount,
             });
           }
 
@@ -1615,6 +1685,7 @@ export const useChatStore = defineStore('chat', {
         this.systemMessagePrint("모션인식을 중지합니다.")
         this.prepareVideoElement(inputVideoAlt);
         videoElement = inputVideoAlt;
+        this.syncMotionStatus(0, 0, true);
       } else {
         this.motionCheck = true;
         this.systemMessagePrint("모션인식을 재시작합니다.")
@@ -1668,6 +1739,7 @@ export const useChatStore = defineStore('chat', {
       document
         .querySelectorAll(".tracking-preview")
         .forEach((previewElement) => previewElement.remove());
+      this.invalidateTrackingPreviewElements();
 
       let videoElement
       if (this.mobile) {
