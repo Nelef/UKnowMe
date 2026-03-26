@@ -114,7 +114,7 @@ export const useChatStore = defineStore('chat', {
     leavingSession: false,
     soloMode: false,
     liveKitQuotaModal: false,
-    trackingDebugPreviewEnabled: false,
+    trackingDebugPreviewEnabled: true,
     debugMessages: [],
   }),
   getters: {
@@ -226,7 +226,7 @@ export const useChatStore = defineStore('chat', {
     refreshTrackingDebugPreviewFlag() {
       this.trackingDebugPreviewEnabled =
         typeof window !== "undefined" &&
-        window.localStorage.getItem("ukm-chat-debug-preview") === "1";
+        window.localStorage.getItem("ukm-chat-debug-preview") !== "0";
 
       return this.trackingDebugPreviewEnabled;
     },
