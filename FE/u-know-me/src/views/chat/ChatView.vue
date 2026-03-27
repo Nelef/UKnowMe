@@ -7,13 +7,11 @@
           <div class="chat-stage-copy">
             <div class="chat-stage-kicker">{{ stageKicker }}</div>
             <div class="chat-stage-title">{{ stageTitle }}</div>
-            <p class="chat-stage-description">
-              {{ stageDescription }}
-            </p>
+            <p class="chat-stage-description">{{ stageDescription }}</p>
           </div>
           <div class="chat-stage-meta">
             <div class="chat-stage-pill">{{ stageSummaryText }}</div>
-            <div class="chat-stage-pill">4:3 Canvas</div>
+            <div class="chat-stage-pill">{{ stageModeText }}</div>
           </div>
         </div>
 
@@ -75,51 +73,44 @@
           />
         </div>
 
-        <div
-          v-if="showMonitorPanel"
-          class="chat-monitor-panel"
-          :style="{ maxWidth: stageMaxWidth }"
-        >
-          <div class="chat-monitor-copy">
-            <div class="chat-monitor-kicker">Camera Preview</div>
-            <div class="chat-monitor-title">실제 카메라와 인식 상태</div>
-            <p class="chat-monitor-description">
-              메인 아바타 캔버스와 분리해서 실제 입력 영상을 따로 확인합니다.
-            </p>
+      </div>
+      <div v-show="showMonitorPanel" class="chat-floating-monitor">
+        <div class="chat-floating-monitor-head">
+          <div class="chat-floating-monitor-title">내 카메라</div>
+          <div class="chat-floating-monitor-subtitle">
+            {{ floatingMonitorText }}
           </div>
+        </div>
 
-          <div class="chat-monitor-stage">
-            <div
-              class="tracking-preview-shell tracking-preview-debug"
-              :class="{ 'tracking-preview-solo': chat.soloMode }"
+        <div
+          class="tracking-preview-shell tracking-preview-debug chat-floating-monitor-stage"
+          :class="{ 'tracking-preview-solo': chat.soloMode }"
+        >
+          <div class="tracking-preview tracking-preview-active">
+            <video
+              class="tracking-debug-video"
+              autoplay
+              muted
+              playsinline
+              style="display: none"
+            ></video>
+            <canvas
+              class="tracking-debug-canvas"
+              style="display: none"
+            ></canvas>
+            <button
+              type="button"
+              class="tracking-preview-label"
+              @click.stop="toggleMotionDelegate"
             >
-              <div class="tracking-preview tracking-preview-active">
-                <video
-                  class="tracking-debug-video"
-                  autoplay
-                  muted
-                  playsinline
-                  style="display: none"
-                ></video>
-                <canvas
-                  class="tracking-debug-canvas"
-                  style="display: none"
-                ></canvas>
-                <button
-                  type="button"
-                  class="tracking-preview-label"
-                  @click.stop="toggleMotionDelegate"
-                >
-                  {{ trackingPreviewLabel }}
-                </button>
-              </div>
-              <div
-                class="motion-status"
-                :class="{ active: chat.motionFaceCount > 0 || chat.motionPoseCount > 0 }"
-              >
-                {{ motionStatusText }}
-              </div>
-            </div>
+              {{ trackingPreviewLabel }}
+            </button>
+          </div>
+          <div
+            class="motion-status"
+            :class="{ active: chat.motionFaceCount > 0 || chat.motionPoseCount > 0 }"
+          >
+            {{ motionStatusText }}
           </div>
         </div>
       </div>
@@ -179,24 +170,23 @@ export default {
   computed: {
     motionStatusText() {
       if (!this.chat.motionCheck) {
-        return "모션 인식이 꺼져 있습니다";
+        return "모션 인식 꺼짐";
       }
 
       if (this.chat.motionFaceCount > 0 || this.chat.motionPoseCount > 0) {
-        return `모션 인식 중 · 얼굴 ${this.chat.motionFaceCount} / 자세 ${this.chat.motionPoseCount}`;
+        return `얼굴 ${this.chat.motionFaceCount} · 자세 ${this.chat.motionPoseCount}`;
       }
 
-      return "얼굴을 카메라 중앙에 맞춰주세요";
+      return "대상을 인식하는 중";
     },
     participantCount() {
       return this.remoteParticipants.length + 1;
     },
     stageLayout() {
       if (this.participantCount === 1) {
-        const reservedHeight = this.showMonitorPanel ? 330 : 180;
-
         return {
-          maxWidth: `min(1320px, calc(100vw - 32px), calc((100dvh - var(--chat-sub-size) - ${reservedHeight}px) * 4 / 3))`,
+          maxWidth:
+            "min(1320px, calc(100vw - 56px), calc((100dvh - var(--chat-sub-size) - 130px) * 4 / 3))",
           minCardWidth: 720,
         };
       }
@@ -223,45 +213,57 @@ export default {
       };
     },
     stageKicker() {
-      return this.chat.soloMode ? "Solo Stage" : "Live Stage";
+      return "채팅";
     },
     stageTitle() {
       if (this.chat.loading === 1) {
-        return "아바타 스테이지를 준비하는 중입니다";
+        return "입장 준비 중";
       }
 
       if (this.participantCount === 1) {
         return this.chat.soloMode
-          ? "혼자서도 크게 보이는 4:3 캔버스"
-          : "상대를 기다리는 동안 메인 캔버스를 크게 유지합니다";
+          ? "테스트 세션"
+          : "상대 연결 대기 중";
       }
 
-      return `참가자 ${this.participantCount}명에 맞춰 자동 정렬됩니다`;
+      return "영상 채팅 진행 중";
     },
     stageDescription() {
       if (this.chat.loading === 1) {
-        return "모션 인식과 카메라 입력을 안정화한 뒤 채팅 세션으로 연결합니다.";
+        return "카메라와 아바타를 초기화하고 있습니다.";
       }
 
       if (this.participantCount === 1) {
-        return "실제 캠 프리뷰는 아래 별도 패널로 분리하고, 메인 영역은 아바타 캔버스에 집중되도록 구성했습니다.";
+        return this.chat.soloMode
+          ? "카메라 입력과 아바타 움직임을 확인할 수 있습니다."
+          : "상대가 입장하면 화면이 자동으로 정렬됩니다.";
       }
 
-      return "참가자 수가 늘어나면 카드가 정사각형에 가까운 그리드로 재배치되어 행과 열이 덜 어색하게 보이도록 맞춥니다.";
+      return `${this.participantCount}명이 연결되어 있으며, 모든 화면은 4:3 비율을 유지합니다.`;
+    },
+    stageModeText() {
+      return this.chat.motionCheck ? "모션 인식 켜짐" : "모션 인식 꺼짐";
     },
     stageSummaryText() {
       if (this.chat.soloMode) {
-        return "혼자 해보기";
+        return "테스트";
       }
 
       if (this.remoteParticipants.length === 0) {
         return "연결 대기 중";
       }
 
-      return `참가자 ${this.participantCount}명`;
+      return `${this.participantCount}명 연결`;
     },
     showMonitorPanel() {
-      return this.chat.loading === 1 || this.chat.motionCheck;
+      return this.chat.loading === 1 || Boolean(this.chat.camera);
+    },
+    floatingMonitorText() {
+      if (this.chat.loading === 1) {
+        return "카메라 준비 중";
+      }
+
+      return this.chat.motionCheck ? "실시간 입력 확인" : "미리보기";
     },
     trackingPreviewLabel() {
       const forcedDelegate =
@@ -272,30 +274,30 @@ export default {
       const delegateStatus = this.chat.holisticDelegateStatus;
 
       if (activeDelegate === "GPU") {
-        return "GPU 사용 중";
+        return "처리 모드: GPU";
       }
 
       if (forcedDelegate === "GPU") {
         if (delegateStatus === "gpu-precheck-failed") {
-          return "CPU · GPU 미지원";
+          return "처리 모드: 호환";
         }
 
         if (delegateStatus === "gpu-init-failed") {
-          return "CPU · GPU 초기화 실패";
+          return "처리 모드: 호환";
         }
 
         if (delegateStatus === "gpu-tracking-fallback") {
-          return "CPU · GPU 불안정";
+          return "처리 모드: 호환";
         }
 
-        return "CPU · GPU 실패";
+        return "처리 모드: 호환";
       }
 
       if (forcedDelegate === "CPU") {
-        return "CPU 고정";
+        return "처리 모드: CPU";
       }
 
-      return "CPU 자동 · GPU 시도";
+      return "처리 모드: 자동";
     },
   },
 
@@ -324,7 +326,7 @@ export default {
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
     this.joinSession();
     this.chat.systemMessagePrint(
-      "상호간에 매너채팅은 필수! 좋은 만남 보내세요~"
+      "상대를 배려하며 대화를 시작해 주세요."
     );
   },
   beforeUnmount() {
@@ -354,7 +356,7 @@ export default {
           sessionName: this.SessionName,
         });
         this.chat.loading = 1;
-        this.chat.setLoadingState(0, "사용자 정보를 확인하는 중..");
+        this.chat.setLoadingState(0, "사용자 정보를 확인하고 있습니다.");
         await this.account.fetchCurrentUser();
         this.chat.logDebug("joinSession:userFetched", {
           userSeq: this.account.currentUser.seq,
@@ -373,7 +375,7 @@ export default {
           });
           this.chat.socketConnect(this.account.currentUser.seq);
         }
-        this.chat.setLoadingState(5, "아바타 장면을 준비하는 중..");
+        this.chat.setLoadingState(5, "아바타 장면을 준비하고 있습니다.");
         await this.chat.avatarLoad(this.account.currentUser.avatar.seq);
         this.chat.logDebug("joinSession:avatarLoadCalled", {
           avatarSeq: this.account.currentUser.avatar.seq,
@@ -387,12 +389,12 @@ export default {
         this.readyIntervalId = window.setInterval(() => {
           if (this.chat.ready) {
             this.chat.logDebug("joinSession:readyIntervalSatisfied");
-            this.chat.setLoadingState(90, "안정화 중..");
+            this.chat.setLoadingState(90, "연결을 마무리하고 있습니다.");
             setTimeout(() => {
               if (this.chat.soloMode) {
-                this.chat.setLoadingState(100, "혼자 해보기 준비 완료");
+                this.chat.setLoadingState(100, "테스트 세션 준비 완료");
                 this.chat.loading = 0;
-                this.chat.systemMessagePrint("혼자 해보기 모드입니다.");
+                this.chat.systemMessagePrint("테스트 세션으로 입장했습니다.");
                 return;
               }
 
@@ -410,7 +412,7 @@ export default {
           stack: error?.stack || null,
         });
         console.error("채팅 초기화 중 오류가 발생했습니다.", error);
-        this.chat.setLoadingState(0, "모션 인식 초기화에 실패했습니다.");
+        this.chat.setLoadingState(0, "모션 인식을 시작하지 못했습니다.");
         this.chat.loading = 0;
       }
     },
@@ -419,7 +421,7 @@ export default {
       console.log("5. LiveKit 시작");
 
       try {
-        this.chat.setLoadingState(92, "채팅 세션에 연결하는 중..");
+        this.chat.setLoadingState(92, "채팅 세션에 연결하고 있습니다.");
         const connection = await this.createParticipantToken(this.mySessionId);
         const room = new Room({
           adaptiveStream: true,
@@ -440,14 +442,14 @@ export default {
         });
         this.chat.localAudioTrack = audioPublication.track || audioTrack;
 
-        this.chat.setLoadingState(97, "아바타 비디오를 게시하는 중..");
+        this.chat.setLoadingState(97, "아바타 화면을 전송하고 있습니다.");
         await this.chat.switchPublishedVideoTrack(avatarVideo, {
           stopPrevious: false,
           trackName: "avatar-camera",
         });
 
         this.syncRemoteParticipants();
-        this.chat.setLoadingState(100, "입장 완료");
+        this.chat.setLoadingState(100, "입장이 완료되었습니다.");
         this.chat.loading = 0;
       } catch (error) {
         console.error("LiveKit 연결 중 오류가 발생했습니다.", error);
@@ -637,9 +639,9 @@ h1 {
   min-height: 100dvh;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(161, 102, 255, 0.2), transparent 24%),
-    radial-gradient(circle at right center, rgba(77, 208, 225, 0.12), transparent 20%),
-    linear-gradient(180deg, #120d1f 0%, #090710 100%);
+    radial-gradient(circle at top left, rgba(255, 211, 231, 0.7), transparent 24%),
+    radial-gradient(circle at right top, rgba(198, 228, 255, 0.68), transparent 24%),
+    linear-gradient(180deg, #fbf7ff 0%, #f2f7ff 48%, #ffffff 100%);
 }
 
 .chat-stage-shell {
@@ -651,6 +653,13 @@ h1 {
   gap: 18px;
   padding: 20px 20px 0;
   overflow: auto;
+}
+
+.chat-stage-shell,
+.chat-stage-header,
+.chat-stage {
+  position: relative;
+  z-index: 1;
 }
 
 .chat-stage-header {
@@ -669,7 +678,7 @@ h1 {
 }
 
 .chat-stage-kicker {
-  color: rgba(216, 197, 255, 0.82);
+  color: #7a639d;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -677,7 +686,7 @@ h1 {
 }
 
 .chat-stage-title {
-  color: #f8f5ff;
+  color: #30214f;
   font-size: clamp(24px, 2vw, 34px);
   font-weight: 800;
   line-height: 1.15;
@@ -686,7 +695,7 @@ h1 {
 .chat-stage-description {
   max-width: 780px;
   margin: 0;
-  color: rgba(255, 255, 255, 0.72);
+  color: #62557d;
   font-size: 14px;
   line-height: 1.6;
 }
@@ -703,12 +712,14 @@ h1 {
   align-items: center;
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(18, 14, 31, 0.86);
-  color: #f5efff;
+  background: rgba(255, 255, 255, 0.9);
+  color: #4a3e67;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 12px 24px rgba(106, 109, 141, 0.12),
+    inset 0 0 0 1px rgba(111, 96, 145, 0.1);
 }
 
 .chat-stage {
@@ -735,23 +746,23 @@ h1 {
   overflow: hidden;
   border-radius: 28px;
   background:
-    radial-gradient(circle at top, rgba(151, 92, 255, 0.24), transparent 40%),
-    linear-gradient(180deg, #26193f 0%, #140f22 100%);
+    radial-gradient(circle at top, rgba(200, 184, 255, 0.35), transparent 42%),
+    linear-gradient(180deg, #ffffff 0%, #eef3ff 100%);
   box-shadow:
-    0 24px 50px rgba(0, 0, 0, 0.34),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    0 22px 44px rgba(123, 132, 165, 0.18),
+    inset 0 0 0 1px rgba(140, 150, 186, 0.16);
 }
 
 .video-item-local .video-stage {
   box-shadow:
-    0 30px 65px rgba(0, 0, 0, 0.38),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    0 28px 54px rgba(108, 116, 154, 0.18),
+    inset 0 0 0 1px rgba(140, 150, 186, 0.16);
 }
 
 .video-item-remote .video-stage {
   background:
-    radial-gradient(circle at top, rgba(90, 207, 225, 0.16), transparent 40%),
-    linear-gradient(180deg, #1f1a34 0%, #130f22 100%);
+    radial-gradient(circle at top, rgba(163, 223, 242, 0.34), transparent 40%),
+    linear-gradient(180deg, #ffffff 0%, #edf6ff 100%);
 }
 
 #my-video {
@@ -775,7 +786,7 @@ h1 {
   transform: rotateY(180deg);
   -webkit-transform: rotateY(180deg);
   -moz-transform: rotateY(180deg);
-  background: #120f1b;
+  background: #edf2f7;
 }
 
 .video-card-footer {
@@ -791,22 +802,23 @@ h1 {
   align-items: center;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(245, 236, 255, 0.92);
-  color: #7442d8;
+  background: rgba(255, 255, 255, 0.92);
+  color: #554471;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  box-shadow: inset 0 0 0 1px rgba(111, 96, 145, 0.1);
 }
 
 .video-item-remote .video-card-status {
-  background: rgba(255, 255, 255, 0.14);
-  color: rgba(245, 239, 255, 0.96);
+  background: rgba(238, 246, 255, 0.95);
+  color: #476178;
 }
 
 .nickName {
   margin: 0;
-  color: #f7f4ff;
+  color: #2f2743;
   font-size: 16px;
   font-weight: 700;
   text-align: right;
@@ -818,14 +830,14 @@ h1 {
   aspect-ratio: 4 / 3;
   overflow: hidden;
   border-radius: 20px;
-  background: rgba(8, 10, 23, 0.78);
-  box-shadow: 0px 14px 32px rgba(0, 0, 0, 0.28);
+  background: linear-gradient(180deg, #f6f8fd 0%, #e8edf7 100%);
+  box-shadow: 0 16px 32px rgba(123, 132, 165, 0.18);
 }
 .tracking-preview-shell {
-  width: clamp(220px, 24vw, 300px);
+  width: 100%;
 }
 .tracking-preview-solo {
-  width: clamp(260px, 28vw, 360px);
+  width: 100%;
 }
 .tracking-preview-hidden {
   position: absolute;
@@ -874,77 +886,76 @@ h1 {
   z-index: 3;
   padding: 4px 8px;
   border-radius: 999px;
-  background: rgba(11, 13, 29, 0.72);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.88);
+  color: #3f3558;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
   border: 0;
   cursor: pointer;
   backdrop-filter: blur(8px);
+  box-shadow: 0 8px 18px rgba(111, 96, 145, 0.16);
 }
 
-.chat-monitor-panel {
-  width: 100%;
-  margin: 0 auto;
+.chat-floating-monitor {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 4;
+  width: clamp(240px, 22vw, 320px);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  padding: 14px 18px;
-  border-radius: 28px;
-  background: rgba(16, 12, 28, 0.82);
+  gap: 12px;
+  padding: 14px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.9);
   box-shadow:
-    0 20px 40px rgba(0, 0, 0, 0.22),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    0 22px 44px rgba(123, 132, 165, 0.22),
+    inset 0 0 0 1px rgba(140, 150, 186, 0.18);
+  backdrop-filter: blur(16px);
 }
 
-.chat-monitor-copy {
-  min-width: 0;
+.chat-floating-monitor-head {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
-.chat-monitor-kicker {
-  color: rgba(213, 194, 255, 0.78);
-  font-size: 12px;
+.chat-floating-monitor-title {
+  color: #2f2743;
+  font-size: 15px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
-.chat-monitor-title {
-  color: #f8f5ff;
-  font-size: 18px;
-  font-weight: 700;
+.chat-floating-monitor-subtitle {
+  color: #6a5d86;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.chat-monitor-description {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.chat-monitor-stage {
-  display: flex;
-  align-items: flex-start;
+.chat-floating-monitor-stage {
+  width: 100%;
 }
 
 .motion-status {
   margin-top: 10px;
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(11, 13, 29, 0.72);
-  color: rgba(255, 255, 255, 0.92);
+  background: rgba(246, 249, 255, 0.96);
+  color: #4c4166;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.3;
   text-align: center;
-  backdrop-filter: blur(8px);
+  box-shadow: inset 0 0 0 1px rgba(140, 150, 186, 0.14);
 }
 .motion-status.active {
-  background: rgba(60, 28, 124, 0.78);
+  background: rgba(231, 243, 255, 0.98);
+  color: #215b84;
+}
+
+@media screen and (min-width: 1181px) {
+  .chat-stage-shell {
+    padding-right: clamp(296px, 25vw, 372px);
+  }
 }
 
 @media screen and (max-width: 1120px) {
@@ -962,17 +973,11 @@ h1 {
     justify-content: flex-start;
   }
 
-  .chat-monitor-panel {
-    grid-template-columns: 1fr;
-    justify-items: start;
-  }
-
-  .chat-monitor-stage {
-    width: 100%;
-  }
-
-  .tracking-preview-shell {
-    width: min(100%, 320px);
+  .chat-floating-monitor {
+    top: auto;
+    bottom: calc(var(--chat-sub-size) + 18px);
+    right: 16px;
+    width: min(280px, calc(100vw - 32px));
   }
 }
 
@@ -1007,17 +1012,12 @@ h1 {
     text-align: left;
   }
 
-  .chat-monitor-panel {
-    padding: 14px;
-    border-radius: 22px;
-  }
-
-  .chat-monitor-title {
-    font-size: 16px;
-  }
-
-  .chat-monitor-description {
-    font-size: 13px;
+  .chat-floating-monitor {
+    right: 12px;
+    bottom: calc(var(--chat-sub-size) + 12px);
+    width: min(230px, calc(100vw - 24px));
+    padding: 12px;
+    border-radius: 20px;
   }
 }
 </style>

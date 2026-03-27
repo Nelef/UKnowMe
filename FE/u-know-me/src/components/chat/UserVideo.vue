@@ -7,7 +7,7 @@
       />
     </div>
     <div class="video-card-footer">
-      <div class="video-card-status">상대 {{ index }}</div>
+      <div class="video-card-status">참가자 {{ index }}</div>
       <p class="nickName">{{ displayName }}</p>
     </div>
   </div>

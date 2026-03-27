@@ -259,7 +259,7 @@ export default {
     openAccuseModal() {
       if (this.chat.soloMode) {
         this.chat.systemMessagePrint(
-          "혼자 해보기에서는 신고 기능을 사용할 수 없습니다."
+          "테스트 세션에서는 신고 기능을 사용할 수 없습니다."
         );
         return;
       }

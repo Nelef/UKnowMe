@@ -713,7 +713,7 @@ export const useChatStore = defineStore('chat', {
         this.holistic = null;
       }
 
-      this.loadingText = `모션 모델 초기화 중..<br>${delegate}`;
+      this.loadingText = `모션 인식을 준비하고 있습니다.<br>${delegate}`;
       this.setLoadingState(delegate === "GPU" ? 45 : 55);
 
       this.logDebug("ensureHolisticLandmarker:moduleImport");
@@ -821,7 +821,7 @@ export const useChatStore = defineStore('chat', {
         matchingRoom: useMainStore().option.matchingRoom,
       });
       this.cleanupAvatarPipeline();
-      this.setLoadingState(5, "아바타 모델 불러오는 중..");
+      this.setLoadingState(5, "아바타 모델을 불러오고 있습니다.");
 
       //three
       const scene = new THREE.Scene();
@@ -1489,7 +1489,7 @@ export const useChatStore = defineStore('chat', {
         if (preferredDelegate === "GPU") {
           console.warn("GPU HolisticLandmarker 초기화에 실패해 CPU delegate로 재시도합니다.", error);
           this.holisticDelegateStatus = "gpu-init-failed";
-          this.setLoadingState(55, "모션 모델 초기화 재시도 중..<br>CPU");
+          this.setLoadingState(55, "호환 모드로 다시 준비하고 있습니다.<br>CPU");
           await this.ensureHolisticLandmarker("CPU");
         } else {
           throw error;
@@ -1497,7 +1497,7 @@ export const useChatStore = defineStore('chat', {
       }
 
       // Use `Mediapipe` utils to get camera - lower resolution = higher fps
-      this.setLoadingState(70, "카메라 초기화 중..");
+      this.setLoadingState(70, "카메라를 초기화하고 있습니다.");
       this.logDebug("startHolistic:cameraCreate");
       this.camera = this.createTrackingCamera(videoElement, processHolisticFrame);
       await Promise.resolve(this.camera.start());
@@ -1552,7 +1552,7 @@ export const useChatStore = defineStore('chat', {
       var avatarVideo = testVideo.srcObject.getVideoTracks()[0];
 
       console.log("4. Holistic 로드 완료");
-      this.setLoadingState(85, "모션 인식 준비 완료");
+      this.setLoadingState(85, "모션 인식 준비가 완료되었습니다.");
 
       return avatarVideo;
     },
@@ -1701,7 +1701,7 @@ export const useChatStore = defineStore('chat', {
         const jsonData = JSON.parse(test);
         console.log(jsonData);
         if (jsonData.key == "uknowme") {
-          self.systemMessagePrint("서로의 하트가 눌렸습니다! 카메라로 변경됩니다.")
+          self.systemMessagePrint("카메라가 공개되었습니다.")
           self.toCam();
           self.heartRainFlag = true;
           setTimeout(() => {
@@ -1709,16 +1709,16 @@ export const useChatStore = defineStore('chat', {
           }, 3000);
         }
         if (jsonData.key == "balance_q_response_" + useMainStore().option.matchingRoom) {
-          self.systemMessagePrint("밸런스게임이 시작되었습니다.")
+          self.systemMessagePrint("밸런스 게임이 시작되었습니다.")
           self.systemMessagePrint(jsonData.answer1+" / "+jsonData.answer2);
-          self.systemMessagePrint("당신의 선택은?");
+          self.systemMessagePrint("선택해 주세요.");
           self.gameQ = jsonData.question;
           self.gameA1 = jsonData.answer1;
           self.gameA2 = jsonData.answer2;
           self.gameBtn = 1;
         }
         if (jsonData.key == "balance_a_response_" + useMainStore().option.matchingRoom) {
-          self.systemMessagePrint(jsonData.nickName + "님이 "+jsonData.question+"을(를) 선택하셨습니다.")
+          self.systemMessagePrint(jsonData.nickName + "님이 " + jsonData.question + "을 선택했습니다.")
         }
       };
 
@@ -1751,7 +1751,7 @@ export const useChatStore = defineStore('chat', {
 
     balanceClick() {
       if (this.soloMode || !this.webSocket) {
-        this.systemMessagePrint("혼자 해보기에서는 밸런스 게임을 사용할 수 없습니다.")
+        this.systemMessagePrint("테스트 세션에서는 밸런스 게임을 사용할 수 없습니다.")
         return
       }
 
@@ -1790,27 +1790,31 @@ export const useChatStore = defineStore('chat', {
 
       if (this.motionCheck == true) {
         this.motionCheck = false;
-        this.systemMessagePrint("모션인식을 중지합니다.")
+        this.systemMessagePrint("모션 인식을 끕니다.")
         this.syncMotionStatus(0, 0, true);
       } else {
         this.motionCheck = true;
-        this.systemMessagePrint("모션인식을 재시작합니다.")
+        this.systemMessagePrint("모션 인식을 켭니다.")
       }
 
+      const sourceVideoElement =
+        document.querySelector(".tracking-primary-video") ||
+        document.querySelector(".my-real-video");
+      await this.syncTrackingDebugStream(sourceVideoElement);
       this.updateTrackingPreviewVisibility(this.motionCheck);
     },
 
     heartClick() {
       if (this.soloMode || !this.webSocket) {
-        this.systemMessagePrint("혼자 해보기에서는 하트 기능을 사용할 수 없습니다.")
+        this.systemMessagePrint("테스트 세션에서는 하트 기능을 사용할 수 없습니다.")
         return
       }
 
       if (useMainStore().option.matchingRoom == "1") {
-        this.systemMessagePrint("하트를 눌렸습니다! 상대방이 하트를 누르면 서로의 카메라가 공개됩니다.")
+        this.systemMessagePrint("하트를 보냈습니다. 서로 하트를 누르면 카메라가 공개됩니다.")
       }
       if (useMainStore().option.matchingRoom == "2") {
-        this.systemMessagePrint("하트를 눌렸습니다! 모든사람이 하트를 누르면 모두의 카메라가 공개됩니다.")
+        this.systemMessagePrint("하트를 보냈습니다. 모든 참가자가 누르면 카메라가 공개됩니다.")
       }
 
       let message = `{
@@ -1830,11 +1834,6 @@ export const useChatStore = defineStore('chat', {
         motionBtn[i].disabled = true;
       }
 
-      document
-        .querySelectorAll(".tracking-preview")
-        .forEach((previewElement) => previewElement.remove());
-      this.invalidateTrackingPreviewElements();
-
       const videoElement = document.querySelector(".my-real-video");
       if (!videoElement) {
         console.warn("실제 카메라 비디오 요소를 찾을 수 없습니다.");
@@ -1846,6 +1845,8 @@ export const useChatStore = defineStore('chat', {
       this.cleanupAvatarPipeline();
       this.camera = this.createPassiveCamera(videoElement);
       this.camera.start();
+      this.syncTrackingDebugStream(videoElement);
+      this.updateTrackingPreviewVisibility(false);
 
       if (!this.room || this.soloMode) {
         return
