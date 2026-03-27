@@ -298,6 +298,14 @@ export default {
       const activeDelegate = this.chat.holisticDelegate || "CPU";
       const delegateStatus = this.chat.holisticDelegateStatus;
 
+      if (delegateStatus === "worker-cpu-active") {
+        return "처리 모드: 워커";
+      }
+
+      if (delegateStatus === "worker-fallback-main") {
+        return "처리 모드: CPU";
+      }
+
       if (activeDelegate === "GPU") {
         return "처리 모드: GPU";
       }

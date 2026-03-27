@@ -17,6 +17,9 @@ let currentVrm;
 let tasksVisionFilesetPromise;
 let tasksVisionModulePromise;
 let trackingPreviewElementsCache = null;
+let holisticWorkerInstance = null;
+let holisticWorkerRequestSeq = 0;
+let holisticWorkerPendingRequests = new Map();
 
 const PUBLIC_BASE_URL = (process.env.BASE_URL || "/").replace(/\/+$/, "");
 const buildPublicAssetUrl = (assetPath) =>
@@ -365,6 +368,9 @@ export const useChatStore = defineStore('chat', {
           console.warn("Holistic 종료 중 오류가 발생했습니다.", error);
         }
         this.holistic = null;
+      }
+      if (closeHolistic) {
+        this.destroyHolisticWorker("cleanup");
       }
       this.holisticDelegate = '';
       this.holisticFallbackAttempted = false;
@@ -753,12 +759,138 @@ export const useChatStore = defineStore('chat', {
 
       return "GPU";
     },
+    supportsHolisticWorker() {
+      return (
+        typeof Worker !== "undefined" &&
+        typeof createImageBitmap === "function"
+      );
+    },
+    isHolisticWorkerActive() {
+      return this.holisticDelegateStatus === "worker-cpu-active";
+    },
+    ensureHolisticWorker() {
+      if (!this.supportsHolisticWorker()) {
+        return null;
+      }
+
+      if (holisticWorkerInstance) {
+        return holisticWorkerInstance;
+      }
+
+      const worker = new Worker(
+        new URL("../../workers/holisticWorker.js", import.meta.url),
+        { type: "module" }
+      );
+
+      worker.onmessage = (event) => {
+        const { requestId, ok, payload, error } = event.data || {};
+        const pendingRequest = holisticWorkerPendingRequests.get(requestId);
+        if (!pendingRequest) {
+          return;
+        }
+
+        holisticWorkerPendingRequests.delete(requestId);
+
+        if (ok) {
+          pendingRequest.resolve(payload);
+          return;
+        }
+
+        pendingRequest.reject(
+          new Error(error?.message || "Holistic worker 응답에 실패했습니다.")
+        );
+      };
+
+      worker.onerror = (event) => {
+        const error = new Error(
+          event?.message || "Holistic worker 실행 중 오류가 발생했습니다."
+        );
+        for (const pendingRequest of holisticWorkerPendingRequests.values()) {
+          pendingRequest.reject(error);
+        }
+        holisticWorkerPendingRequests.clear();
+        worker.terminate();
+        if (holisticWorkerInstance === worker) {
+          holisticWorkerInstance = null;
+        }
+      };
+
+      holisticWorkerInstance = worker;
+
+      return worker;
+    },
+    async postHolisticWorkerRequest(type, payload = {}, transfer = []) {
+      const worker = this.ensureHolisticWorker();
+      if (!worker) {
+        throw new Error("Holistic worker를 사용할 수 없는 환경입니다.");
+      }
+
+      const requestId = ++holisticWorkerRequestSeq;
+
+      return await new Promise((resolve, reject) => {
+        holisticWorkerPendingRequests.set(requestId, {
+          resolve,
+          reject,
+        });
+
+        try {
+          worker.postMessage(
+            {
+              requestId,
+              type,
+              payload,
+            },
+            transfer
+          );
+        } catch (error) {
+          holisticWorkerPendingRequests.delete(requestId);
+          reject(error);
+        }
+      });
+    },
+    async initHolisticWorker(options = {}) {
+      return await this.postHolisticWorkerRequest("init", options);
+    },
+    async detectHolisticWorker(frameBitmap, timestampMs) {
+      return await this.postHolisticWorkerRequest(
+        "detect",
+        {
+          frame: frameBitmap,
+          timestampMs,
+        },
+        [frameBitmap]
+      );
+    },
+    destroyHolisticWorker(reason = "") {
+      if (!holisticWorkerInstance) {
+        return;
+      }
+
+      if (reason) {
+        this.logDebug("holisticWorker:destroy", { reason });
+      }
+
+      for (const pendingRequest of holisticWorkerPendingRequests.values()) {
+        pendingRequest.reject(
+          new Error(reason || "Holistic worker가 종료되었습니다.")
+        );
+      }
+      holisticWorkerPendingRequests.clear();
+
+      try {
+        holisticWorkerInstance.terminate();
+      } catch (error) {
+        console.warn("Holistic worker 종료 중 오류가 발생했습니다.", error);
+      }
+
+      holisticWorkerInstance = null;
+    },
     async ensureHolisticLandmarker(
       delegate = this.getPreferredHolisticDelegate(),
       canvas = null,
       options = {}
     ) {
-      const { forceRecreate = false } = options;
+      const { forceRecreate = false, preferMainThread = false } = options;
       const resolvedRequestedDelegate = this.resolveHolisticDelegate(delegate);
       this.holisticRequestedDelegate = delegate;
       this.logDebug("ensureHolisticLandmarker:start", {
@@ -766,7 +898,50 @@ export const useChatStore = defineStore('chat', {
         resolvedRequestedDelegate,
         hasCanvas: Boolean(canvas),
         forceRecreate,
+        preferMainThread,
       });
+
+      if (!preferMainThread && this.supportsHolisticWorker()) {
+        if (!forceRecreate && this.isHolisticWorkerActive()) {
+          this.logDebug("ensureHolisticLandmarker:reuseWorker");
+          return null;
+        }
+
+        if (this.holistic) {
+          try {
+            this.holistic.close();
+          } catch (error) {
+            console.warn("기존 HolisticLandmarker 종료 중 오류가 발생했습니다.", error);
+          }
+          this.holistic = null;
+        }
+
+        this.loadingText = "모션 인식을 준비하고 있습니다.<br>WORKER";
+        this.setLoadingState(50);
+
+        try {
+          await this.initHolisticWorker({
+            delegate: "CPU",
+            forceRecreate,
+            minConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+          });
+          this.holisticDelegate = "CPU";
+          this.holisticDelegateStatus = "worker-cpu-active";
+          this.holisticFallbackAttempted = true;
+          this.holisticEmptyFaceFrames = 0;
+          this.holisticFrameInFlight = false;
+          this.lastHolisticVideoTime = -1;
+          this.holisticTrackingLogged = false;
+          this.logDebug("ensureHolisticLandmarker:workerReady");
+          return null;
+        } catch (error) {
+          console.warn(
+            "Holistic worker 초기화에 실패해 메인 스레드 추론으로 전환합니다.",
+            error
+          );
+          this.destroyHolisticWorker("worker-init-failed");
+        }
+      }
 
       if (
         !forceRecreate &&
@@ -1267,11 +1442,21 @@ export const useChatStore = defineStore('chat', {
       });
 
       const normalizeHolisticResult = (result) => ({
-        faceLandmarks: result.faceLandmarks?.[0] || null,
-        poseLandmarks: result.poseLandmarks?.[0] || null,
-        ea: result.poseWorldLandmarks?.[0] || null,
-        leftHandLandmarks: result.leftHandLandmarks?.[0] || null,
-        rightHandLandmarks: result.rightHandLandmarks?.[0] || null,
+        faceLandmarks: Array.isArray(result?.faceLandmarks?.[0])
+          ? result.faceLandmarks[0]
+          : result?.faceLandmarks || null,
+        poseLandmarks: Array.isArray(result?.poseLandmarks?.[0])
+          ? result.poseLandmarks[0]
+          : result?.poseLandmarks || null,
+        ea: Array.isArray(result?.poseWorldLandmarks?.[0])
+          ? result.poseWorldLandmarks[0]
+          : result?.poseWorldLandmarks || result?.ea || null,
+        leftHandLandmarks: Array.isArray(result?.leftHandLandmarks?.[0])
+          ? result.leftHandLandmarks[0]
+          : result?.leftHandLandmarks || null,
+        rightHandLandmarks: Array.isArray(result?.rightHandLandmarks?.[0])
+          ? result.rightHandLandmarks[0]
+          : result?.rightHandLandmarks || null,
       });
       let firstHolisticFrameLogged = false;
 
@@ -1471,10 +1656,11 @@ export const useChatStore = defineStore('chat', {
       };
 
       const processHolisticFrame = async () => {
+        const workerActive = this.isHolisticWorkerActive();
         if (
           !videoElement ||
           videoElement.readyState < 2 ||
-          !this.holistic ||
+          (!this.holistic && !workerActive) ||
           !this.motionCheck
         ) {
           return;
@@ -1489,9 +1675,33 @@ export const useChatStore = defineStore('chat', {
         this.holisticFrameInFlight = true;
         try {
           this.lastHolisticVideoTime = currentVideoTime;
-          result = this.holistic.detectForVideo(videoElement, performance.now());
+          const detectTimestamp = performance.now();
+          if (workerActive) {
+            const frameBitmap = await createImageBitmap(videoElement);
+            result = await this.detectHolisticWorker(
+              frameBitmap,
+              detectTimestamp
+            );
+          } else {
+            result = this.holistic.detectForVideo(videoElement, detectTimestamp);
+          }
         } catch (error) {
           const message = error?.message || "";
+          if (workerActive) {
+            console.warn(
+              "Holistic worker 추론에 실패해 메인 스레드 추론으로 전환합니다.",
+              error
+            );
+            this.destroyHolisticWorker("worker-detect-failed");
+            this.holisticDelegateStatus = "worker-fallback-main";
+            this.lastHolisticVideoTime = -1;
+            this.holisticFrameInFlight = false;
+            await this.ensureHolisticLandmarker("CPU", guideCanvas, {
+              forceRecreate: true,
+              preferMainThread: true,
+            });
+            return;
+          }
           if (!message.includes("runningMode")) {
             this.holisticFrameInFlight = false;
             throw error;
