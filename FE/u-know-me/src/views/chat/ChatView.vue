@@ -74,8 +74,17 @@
         </div>
 
       </div>
-      <div v-show="showMonitorPanel" class="chat-floating-monitor">
-        <div class="chat-floating-monitor-head">
+      <div
+        v-show="showMonitorPanel"
+        ref="floatingMonitor"
+        class="chat-floating-monitor"
+        :class="{ 'is-dragging': Boolean(floatingMonitorDragState) }"
+        :style="floatingMonitorStyle"
+      >
+        <div
+          class="chat-floating-monitor-head"
+          @pointerdown="startFloatingMonitorDrag"
+        >
           <div class="chat-floating-monitor-title">내 카메라</div>
           <div class="chat-floating-monitor-subtitle">
             {{ floatingMonitorText }}
@@ -166,6 +175,9 @@ export default {
       chat,
       SessionName,
     };
+  },
+  updated() {
+    this.syncFloatingMonitorPosition();
   },
   computed: {
     motionStatusText() {
@@ -265,6 +277,18 @@ export default {
 
       return this.chat.motionCheck ? "실시간 입력 확인" : "미리보기";
     },
+    floatingMonitorStyle() {
+      if (
+        this.floatingMonitorPosition.x == null ||
+        this.floatingMonitorPosition.y == null
+      ) {
+        return null;
+      }
+
+      return {
+        transform: `translate(${this.floatingMonitorPosition.x}px, ${this.floatingMonitorPosition.y}px)`,
+      };
+    },
     trackingPreviewLabel() {
       const forcedDelegate =
         typeof window !== "undefined"
@@ -311,6 +335,9 @@ export default {
       beforeUnloadHandler: null,
       remoteParticipants: [],
       remoteParticipantSignature: "",
+      floatingMonitorPosition: { x: null, y: null },
+      floatingMonitorDragState: null,
+      floatingMonitorResizeHandler: null,
     };
   },
   mounted() {
@@ -324,6 +351,10 @@ export default {
       this.chat.leaveSession({ navigate: false });
     };
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
+    this.floatingMonitorResizeHandler = () => {
+      this.syncFloatingMonitorPosition();
+    };
+    window.addEventListener("resize", this.floatingMonitorResizeHandler);
     this.joinSession();
     this.chat.systemMessagePrint(
       "상대를 배려하며 대화를 시작해 주세요."
@@ -342,6 +373,12 @@ export default {
     if (this.beforeUnloadHandler) {
       window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     }
+    if (this.floatingMonitorResizeHandler) {
+      window.removeEventListener("resize", this.floatingMonitorResizeHandler);
+    }
+    window.removeEventListener("pointermove", this.onFloatingMonitorDrag);
+    window.removeEventListener("pointerup", this.stopFloatingMonitorDrag);
+    window.removeEventListener("pointercancel", this.stopFloatingMonitorDrag);
   },
   beforeRouteLeave(to, from, next) {
     this.chat.leaveSession({ navigate: false }).finally(() => next());
@@ -599,6 +636,123 @@ export default {
         candidates.includes("resource_exhausted") ||
         candidates.includes("concurrent")
       );
+    },
+    getFloatingMonitorBounds() {
+      const session = document.getElementById("session");
+      const floatingMonitor = this.$refs.floatingMonitor;
+
+      if (!session || !floatingMonitor) {
+        return null;
+      }
+
+      const panelWidth = floatingMonitor.offsetWidth;
+      const panelHeight = floatingMonitor.offsetHeight;
+      const inset = window.innerWidth <= 760 ? 12 : 16;
+      const maxX = Math.max(inset, session.clientWidth - panelWidth - inset);
+      const maxY = Math.max(inset, session.clientHeight - panelHeight - inset);
+
+      return {
+        maxX,
+        maxY,
+        inset,
+      };
+    },
+    clampFloatingMonitorPosition(nextX, nextY) {
+      const bounds = this.getFloatingMonitorBounds();
+      if (!bounds) {
+        return null;
+      }
+
+      return {
+        x: Math.min(Math.max(nextX, bounds.inset), bounds.maxX),
+        y: Math.min(Math.max(nextY, bounds.inset), bounds.maxY),
+      };
+    },
+    syncFloatingMonitorPosition() {
+      if (!this.showMonitorPanel) {
+        return;
+      }
+
+      const bounds = this.getFloatingMonitorBounds();
+      if (!bounds) {
+        return;
+      }
+
+      const hasExistingPosition =
+        this.floatingMonitorPosition.x != null &&
+        this.floatingMonitorPosition.y != null;
+      const fallbackY = window.innerWidth <= 1120 ? bounds.inset + 8 : 24;
+      const nextPosition = hasExistingPosition
+        ? this.clampFloatingMonitorPosition(
+            this.floatingMonitorPosition.x,
+            this.floatingMonitorPosition.y
+          )
+        : this.clampFloatingMonitorPosition(bounds.maxX, fallbackY);
+
+      if (
+        !nextPosition ||
+        (this.floatingMonitorPosition.x === nextPosition.x &&
+          this.floatingMonitorPosition.y === nextPosition.y)
+      ) {
+        return;
+      }
+
+      this.floatingMonitorPosition = nextPosition;
+    },
+    startFloatingMonitorDrag(event) {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      const floatingMonitor = this.$refs.floatingMonitor;
+      if (!floatingMonitor) {
+        return;
+      }
+
+      this.syncFloatingMonitorPosition();
+      this.floatingMonitorDragState = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        baseX: this.floatingMonitorPosition.x || 0,
+        baseY: this.floatingMonitorPosition.y || 0,
+      };
+
+      floatingMonitor.setPointerCapture?.(event.pointerId);
+      window.addEventListener("pointermove", this.onFloatingMonitorDrag);
+      window.addEventListener("pointerup", this.stopFloatingMonitorDrag);
+      window.addEventListener("pointercancel", this.stopFloatingMonitorDrag);
+    },
+    onFloatingMonitorDrag(event) {
+      const dragState = this.floatingMonitorDragState;
+      if (!dragState || dragState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const nextPosition = this.clampFloatingMonitorPosition(
+        dragState.baseX + (event.clientX - dragState.startX),
+        dragState.baseY + (event.clientY - dragState.startY)
+      );
+
+      if (!nextPosition) {
+        return;
+      }
+
+      this.floatingMonitorPosition = nextPosition;
+    },
+    stopFloatingMonitorDrag(event) {
+      if (
+        this.floatingMonitorDragState &&
+        event?.pointerId != null &&
+        this.floatingMonitorDragState.pointerId !== event.pointerId
+      ) {
+        return;
+      }
+
+      this.floatingMonitorDragState = null;
+      window.removeEventListener("pointermove", this.onFloatingMonitorDrag);
+      window.removeEventListener("pointerup", this.stopFloatingMonitorDrag);
+      window.removeEventListener("pointercancel", this.stopFloatingMonitorDrag);
     },
     toggleMotionDelegate() {
       const currentForcedDelegate =
@@ -899,10 +1053,11 @@ h1 {
 
 .chat-floating-monitor {
   position: absolute;
-  top: 24px;
-  right: 24px;
+  top: 0;
+  left: 0;
   z-index: 4;
   width: clamp(240px, 22vw, 320px);
+  max-width: calc(100vw - 24px);
   display: grid;
   gap: 12px;
   padding: 14px;
@@ -912,11 +1067,19 @@ h1 {
     0 22px 44px rgba(123, 132, 165, 0.22),
     inset 0 0 0 1px rgba(140, 150, 186, 0.18);
   backdrop-filter: blur(16px);
+  will-change: transform;
 }
 
 .chat-floating-monitor-head {
   display: grid;
   gap: 4px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.chat-floating-monitor.is-dragging .chat-floating-monitor-head {
+  cursor: grabbing;
 }
 
 .chat-floating-monitor-title {
@@ -974,9 +1137,6 @@ h1 {
   }
 
   .chat-floating-monitor {
-    top: auto;
-    bottom: calc(var(--chat-sub-size) + 18px);
-    right: 16px;
     width: min(280px, calc(100vw - 32px));
   }
 }
@@ -1013,8 +1173,6 @@ h1 {
   }
 
   .chat-floating-monitor {
-    right: 12px;
-    bottom: calc(var(--chat-sub-size) + 12px);
     width: min(230px, calc(100vw - 24px));
     padding: 12px;
     border-radius: 20px;
