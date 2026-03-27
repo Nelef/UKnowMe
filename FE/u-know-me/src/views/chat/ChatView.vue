@@ -177,6 +177,7 @@ export default {
     };
   },
   updated() {
+    this.ensureFloatingMonitorObserver();
     this.syncFloatingMonitorPosition();
   },
   computed: {
@@ -338,6 +339,7 @@ export default {
       floatingMonitorPosition: { x: null, y: null },
       floatingMonitorDragState: null,
       floatingMonitorResizeHandler: null,
+      floatingMonitorResizeObserver: null,
     };
   },
   mounted() {
@@ -355,6 +357,10 @@ export default {
       this.syncFloatingMonitorPosition();
     };
     window.addEventListener("resize", this.floatingMonitorResizeHandler);
+    nextTick(() => {
+      this.ensureFloatingMonitorObserver();
+      this.syncFloatingMonitorPosition();
+    });
     this.joinSession();
     this.chat.systemMessagePrint(
       "상대를 배려하며 대화를 시작해 주세요."
@@ -375,6 +381,10 @@ export default {
     }
     if (this.floatingMonitorResizeHandler) {
       window.removeEventListener("resize", this.floatingMonitorResizeHandler);
+    }
+    if (this.floatingMonitorResizeObserver) {
+      this.floatingMonitorResizeObserver.disconnect();
+      this.floatingMonitorResizeObserver = null;
     }
     window.removeEventListener("pointermove", this.onFloatingMonitorDrag);
     window.removeEventListener("pointerup", this.stopFloatingMonitorDrag);
@@ -636,6 +646,25 @@ export default {
         candidates.includes("resource_exhausted") ||
         candidates.includes("concurrent")
       );
+    },
+    ensureFloatingMonitorObserver() {
+      if (typeof ResizeObserver === "undefined") {
+        return;
+      }
+
+      const floatingMonitor = this.$refs.floatingMonitor;
+      if (!floatingMonitor) {
+        return;
+      }
+
+      if (this.floatingMonitorResizeObserver) {
+        this.floatingMonitorResizeObserver.disconnect();
+      }
+
+      this.floatingMonitorResizeObserver = new ResizeObserver(() => {
+        this.syncFloatingMonitorPosition();
+      });
+      this.floatingMonitorResizeObserver.observe(floatingMonitor);
     },
     getFloatingMonitorBounds() {
       const session = document.getElementById("session");

@@ -418,6 +418,8 @@ export const useChatStore = defineStore('chat', {
       let animationFrameId = null;
       let active = false;
       let lastHandledAt = 0;
+      let lastPreviewVideoWidth = 0;
+      let lastPreviewVideoHeight = 0;
       const minFrameInterval = frameHandler
         ? 1000 / CHAT_MOTION_PROCESS_FPS
         : 0;
@@ -430,6 +432,20 @@ export const useChatStore = defineStore('chat', {
         if (typeof document !== "undefined" && document.hidden) {
           animationFrameId = window.requestAnimationFrame(tick);
           return;
+        }
+
+        if (
+          videoElement?.videoWidth > 0 &&
+          videoElement?.videoHeight > 0 &&
+          (videoElement.videoWidth !== lastPreviewVideoWidth ||
+            videoElement.videoHeight !== lastPreviewVideoHeight)
+        ) {
+          lastPreviewVideoWidth = videoElement.videoWidth;
+          lastPreviewVideoHeight = videoElement.videoHeight;
+          this.syncTrackingPreviewAspectRatio(
+            lastPreviewVideoWidth,
+            lastPreviewVideoHeight
+          );
         }
 
         if (frameHandler && now - lastHandledAt >= minFrameInterval) {
@@ -504,7 +520,9 @@ export const useChatStore = defineStore('chat', {
         ),
         primaryCanvas: document.querySelector("canvas.tracking-primary-canvas"),
         gpuCanvas: document.querySelector("canvas.tracking-gpu-canvas"),
-        debugPreview: document.querySelector(".tracking-preview-debug"),
+        debugPreview: document.querySelector(
+          ".tracking-preview-debug .tracking-preview"
+        ),
         debugVideo: document.querySelector(".tracking-debug-video"),
         debugCanvas: document.querySelector("canvas.tracking-debug-canvas"),
       };
@@ -1283,6 +1301,12 @@ export const useChatStore = defineStore('chat', {
           targetCanvas.width,
           targetCanvas.height
         );
+        const adaptiveRadius =
+          radius *
+          Math.min(
+            2.2,
+            Math.max(0.85, Math.min(sourceWidth, sourceHeight) / 360)
+          );
 
         canvasCtx.fillStyle = color;
 
@@ -1300,7 +1324,7 @@ export const useChatStore = defineStore('chat', {
           const y = drawY + landmark.y * drawHeight;
 
           canvasCtx.beginPath();
-          canvasCtx.arc(x, y, radius, 0, Math.PI * 2);
+          canvasCtx.arc(x, y, adaptiveRadius, 0, Math.PI * 2);
           canvasCtx.fill();
         }
       };
