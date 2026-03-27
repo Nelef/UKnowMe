@@ -188,7 +188,6 @@
 <script>
 import { useChatStore } from "@/stores/chat/chat";
 import { nextTick, onBeforeUnmount, onMounted } from "vue";
-import { useMainStore } from "@/stores/main/main";
 
 export default {
   data() {
@@ -200,43 +199,16 @@ export default {
   },
   setup() {
     const chat = useChatStore();
-    const main = useMainStore();
     let mediaViewContent = null;
     let viewChangeHandler = null;
 
     onMounted(() => {
       nextTick(() => {
-        const renameAvatarCanvas = (fromId, toId) => {
-          const avatarCanvas = document.getElementById(fromId);
-          if (avatarCanvas) {
-            avatarCanvas.id = toId;
-          }
-        };
-
         const applyResponsiveLayout = (isMobile) => {
-          const isOneToOneRoom = String(main.option.matchingRoom) === "1";
-
           document.documentElement.style.setProperty(
             "--chat-sub-size",
             isMobile ? "400px" : "200px"
           );
-
-          if (isOneToOneRoom) {
-            document.documentElement.style.setProperty(
-              "--video-size",
-              isMobile ? "1" : "2"
-            );
-            chat.mobile = isMobile;
-
-            if (isMobile) {
-              renameAvatarCanvas("avatarCanvas1", "avatarCanvas2");
-            } else {
-              renameAvatarCanvas("avatarCanvas2", "avatarCanvas1");
-            }
-          } else {
-            document.documentElement.style.setProperty("--video-size", "2");
-            chat.mobile = false;
-          }
         };
 
         applyResponsiveLayout(window.innerWidth < 1120);
@@ -257,7 +229,6 @@ export default {
 
     return {
       chat,
-      main,
     };
   },
   methods: {
@@ -305,7 +276,6 @@ export default {
 <style>
 /* 전역변수 */
 :root {
-  --video-size: 2;
   --chat-sub-size: 200px;
 }
 

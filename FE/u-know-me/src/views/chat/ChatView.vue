@@ -2,108 +2,126 @@
   <HeartRain v-if="chat.heartRainFlag" />
   <div class="chat-body" id="main-container">
     <div id="session">
-      <div
-        :class="{
-          'video-container1':
-            main.option.matchingRoom == 1 && chat.mobile == false,
-          'video-container2':
-            main.option.matchingRoom == 2 || chat.mobile == true,
-        }"
-      >
-        <div class="video-item" id="my-video">
-          <video
-            :class="{
-              'my-real-video1':
-                main.option.matchingRoom == 1 && chat.mobile == false,
-              'my-real-video2':
-                main.option.matchingRoom == 2 || chat.mobile == true,
-            }"
-            autoplay
-            muted
-            playsinline
-            style="display: none"
-          ></video>
-          <video
-            id="test-video"
-            style="display: none"
-            autoplay
-            muted
-            playsinline
-          ></video>
-          <div
-            :class="[
-              'tracking-preview',
-              'tracking-preview-primary',
-              'tracking-preview-hidden',
-              { 'tracking-preview-solo': chat.soloMode },
-            ]"
-          >
-            <video
-              class="tracking-primary-video"
-              autoplay
-              muted
-              playsinline
-              style="position: absolute; left: 0%"
-            ></video>
-            <video
-              class="tracking-primary-video-passive"
-              autoplay
-              muted
-              playsinline
-              style="position: absolute; left: 0%; display: none"
-            ></video>
-            <canvas
-              class="tracking-primary-canvas"
-              style="position: absolute; left: 0%"
-            ></canvas>
-            <canvas
-              class="tracking-gpu-canvas tracking-gpu-canvas-hidden"
-            ></canvas>
+      <div class="chat-stage-shell">
+        <div class="chat-stage-header" :style="{ maxWidth: stageMaxWidth }">
+          <div class="chat-stage-copy">
+            <div class="chat-stage-kicker">{{ stageKicker }}</div>
+            <div class="chat-stage-title">{{ stageTitle }}</div>
+            <p class="chat-stage-description">
+              {{ stageDescription }}
+            </p>
           </div>
-          <div
-            ref="cameraPreviewShell"
-            class="tracking-preview-shell tracking-preview-debug"
-            :class="{ 'tracking-preview-solo': chat.soloMode }"
-            :style="cameraPreviewStyle"
-            @pointerdown="startCameraPreviewDrag"
-          >
-            <div class="tracking-preview tracking-preview-active">
+          <div class="chat-stage-meta">
+            <div class="chat-stage-pill">{{ stageSummaryText }}</div>
+            <div class="chat-stage-pill">4:3 Canvas</div>
+          </div>
+        </div>
+
+        <div class="chat-stage" :style="stageGridStyle">
+          <div class="video-item video-item-local">
+            <div class="video-stage" id="my-video">
               <video
-                class="tracking-debug-video"
+                class="my-real-video"
                 autoplay
                 muted
                 playsinline
-                style="position: absolute; left: 0%; display: none"
+                style="display: none"
               ></video>
-              <canvas
-                class="tracking-debug-canvas"
-                style="position: absolute; left: 0%; display: none"
-              ></canvas>
-              <button
-                type="button"
-                class="tracking-preview-label"
-                @pointerdown.stop
-                @click.stop="toggleMotionDelegate"
+              <video
+                id="test-video"
+                style="display: none"
+                autoplay
+                muted
+                playsinline
+              ></video>
+              <div
+                :class="[
+                  'tracking-preview',
+                  'tracking-preview-primary',
+                  'tracking-preview-hidden',
+                  { 'tracking-preview-solo': chat.soloMode },
+                ]"
               >
-                {{ trackingPreviewLabel }}
-              </button>
+                <video
+                  class="tracking-primary-video"
+                  autoplay
+                  muted
+                  playsinline
+                ></video>
+                <video
+                  class="tracking-primary-video-passive"
+                  autoplay
+                  muted
+                  playsinline
+                  style="display: none"
+                ></video>
+                <canvas class="tracking-primary-canvas"></canvas>
+                <canvas
+                  class="tracking-gpu-canvas tracking-gpu-canvas-hidden"
+                ></canvas>
+              </div>
             </div>
-            <div
-              class="motion-status"
-              :class="{ active: chat.motionFaceCount > 0 || chat.motionPoseCount > 0 }"
-            >
-              {{ motionStatusText }}
+            <div class="video-card-footer">
+              <div class="video-card-status">{{ stageSummaryText }}</div>
+              <p class="nickName">{{ account.currentUser.nickname }}</p>
             </div>
           </div>
-          <div>
-            <p>{{ account.currentUser.nickname }}</p>
+
+          <user-video
+            v-for="(participant, index) in remoteParticipants"
+            :key="participant.renderKey || participant.identity"
+            :participant="participant"
+            :index="index + 1"
+          />
+        </div>
+
+        <div
+          v-if="showMonitorPanel"
+          class="chat-monitor-panel"
+          :style="{ maxWidth: stageMaxWidth }"
+        >
+          <div class="chat-monitor-copy">
+            <div class="chat-monitor-kicker">Camera Preview</div>
+            <div class="chat-monitor-title">실제 카메라와 인식 상태</div>
+            <p class="chat-monitor-description">
+              메인 아바타 캔버스와 분리해서 실제 입력 영상을 따로 확인합니다.
+            </p>
+          </div>
+
+          <div class="chat-monitor-stage">
+            <div
+              class="tracking-preview-shell tracking-preview-debug"
+              :class="{ 'tracking-preview-solo': chat.soloMode }"
+            >
+              <div class="tracking-preview tracking-preview-active">
+                <video
+                  class="tracking-debug-video"
+                  autoplay
+                  muted
+                  playsinline
+                  style="display: none"
+                ></video>
+                <canvas
+                  class="tracking-debug-canvas"
+                  style="display: none"
+                ></canvas>
+                <button
+                  type="button"
+                  class="tracking-preview-label"
+                  @click.stop="toggleMotionDelegate"
+                >
+                  {{ trackingPreviewLabel }}
+                </button>
+              </div>
+              <div
+                class="motion-status"
+                :class="{ active: chat.motionFaceCount > 0 || chat.motionPoseCount > 0 }"
+              >
+                {{ motionStatusText }}
+              </div>
+            </div>
           </div>
         </div>
-        <user-video
-          v-for="participant in remoteParticipants"
-          :key="participant.renderKey || participant.identity"
-          :participant="participant"
-        />
       </div>
     </div>
     <chat-sub />
@@ -131,7 +149,6 @@ import GameModal from "@/components/chat/GameModal.vue";
 import LoadingModal from "@/components/chat/LoadingModal.vue";
 import HeartRain from "@/components/chat/HeartRain.vue";
 import LiveKitLimitModal from "@/components/chat/LiveKitLimitModal.vue";
-import { useMainStore } from "@/stores/main/main";
 import sr from "@/api/spring-rest";
 
 axios.defaults.headers.post["Content-Type"] = "application/json";
@@ -151,12 +168,9 @@ export default {
   setup() {
     const account = useAccountStore();
     const chat = useChatStore();
-    const main = useMainStore();
-
     let { SessionName } = storeToRefs(chat);
 
     return {
-      main,
       account,
       chat,
       SessionName,
@@ -174,10 +188,80 @@ export default {
 
       return "얼굴을 카메라 중앙에 맞춰주세요";
     },
-    cameraPreviewStyle() {
+    participantCount() {
+      return this.remoteParticipants.length + 1;
+    },
+    stageLayout() {
+      if (this.participantCount === 1) {
+        const reservedHeight = this.showMonitorPanel ? 330 : 180;
+
+        return {
+          maxWidth: `min(1320px, calc(100vw - 32px), calc((100dvh - var(--chat-sub-size) - ${reservedHeight}px) * 4 / 3))`,
+          minCardWidth: 720,
+        };
+      }
+
+      const columnCount = Math.min(4, Math.ceil(Math.sqrt(this.participantCount)));
+      const targetCardWidth =
+        columnCount === 2 ? 520 : columnCount === 3 ? 360 : 300;
+      const minCardWidth =
+        columnCount === 2 ? 400 : columnCount === 3 ? 320 : 260;
+      const maxWidth = columnCount * targetCardWidth + (columnCount - 1) * 24;
+
       return {
-        transform: `translate(${this.cameraPreviewOffset.x}px, ${this.cameraPreviewOffset.y}px)`,
+        maxWidth: `min(calc(100vw - 32px), ${maxWidth}px)`,
+        minCardWidth,
       };
+    },
+    stageMaxWidth() {
+      return this.stageLayout.maxWidth;
+    },
+    stageGridStyle() {
+      return {
+        maxWidth: this.stageMaxWidth,
+        gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${this.stageLayout.minCardWidth}px), 1fr))`,
+      };
+    },
+    stageKicker() {
+      return this.chat.soloMode ? "Solo Stage" : "Live Stage";
+    },
+    stageTitle() {
+      if (this.chat.loading === 1) {
+        return "아바타 스테이지를 준비하는 중입니다";
+      }
+
+      if (this.participantCount === 1) {
+        return this.chat.soloMode
+          ? "혼자서도 크게 보이는 4:3 캔버스"
+          : "상대를 기다리는 동안 메인 캔버스를 크게 유지합니다";
+      }
+
+      return `참가자 ${this.participantCount}명에 맞춰 자동 정렬됩니다`;
+    },
+    stageDescription() {
+      if (this.chat.loading === 1) {
+        return "모션 인식과 카메라 입력을 안정화한 뒤 채팅 세션으로 연결합니다.";
+      }
+
+      if (this.participantCount === 1) {
+        return "실제 캠 프리뷰는 아래 별도 패널로 분리하고, 메인 영역은 아바타 캔버스에 집중되도록 구성했습니다.";
+      }
+
+      return "참가자 수가 늘어나면 카드가 정사각형에 가까운 그리드로 재배치되어 행과 열이 덜 어색하게 보이도록 맞춥니다.";
+    },
+    stageSummaryText() {
+      if (this.chat.soloMode) {
+        return "혼자 해보기";
+      }
+
+      if (this.remoteParticipants.length === 0) {
+        return "연결 대기 중";
+      }
+
+      return `참가자 ${this.participantCount}명`;
+    },
+    showMonitorPanel() {
+      return this.chat.loading === 1 || this.chat.motionCheck;
     },
     trackingPreviewLabel() {
       const forcedDelegate =
@@ -225,8 +309,6 @@ export default {
       beforeUnloadHandler: null,
       remoteParticipants: [],
       remoteParticipantSignature: "",
-      cameraPreviewOffset: { x: 0, y: 0 },
-      cameraPreviewDragState: null,
     };
   },
   mounted() {
@@ -258,9 +340,6 @@ export default {
     if (this.beforeUnloadHandler) {
       window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     }
-    window.removeEventListener("pointermove", this.onCameraPreviewDrag);
-    window.removeEventListener("pointerup", this.stopCameraPreviewDrag);
-    window.removeEventListener("pointercancel", this.stopCameraPreviewDrag);
   },
   beforeRouteLeave(to, from, next) {
     this.chat.leaveSession({ navigate: false }).finally(() => next());
@@ -519,75 +598,6 @@ export default {
         candidates.includes("concurrent")
       );
     },
-    startCameraPreviewDrag(event) {
-      if (event.pointerType === "mouse" && event.button !== 0) {
-        return;
-      }
-
-      const previewShell = this.$refs.cameraPreviewShell;
-      const container = document.getElementById("my-video");
-      if (!previewShell || !container) {
-        return;
-      }
-
-      this.cameraPreviewDragState = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        baseX: this.cameraPreviewOffset.x,
-        baseY: this.cameraPreviewOffset.y,
-      };
-
-      previewShell.setPointerCapture?.(event.pointerId);
-      window.addEventListener("pointermove", this.onCameraPreviewDrag);
-      window.addEventListener("pointerup", this.stopCameraPreviewDrag);
-      window.addEventListener("pointercancel", this.stopCameraPreviewDrag);
-    },
-    onCameraPreviewDrag(event) {
-      const dragState = this.cameraPreviewDragState;
-      const previewShell = this.$refs.cameraPreviewShell;
-      const container = document.getElementById("my-video");
-      if (
-        !dragState ||
-        dragState.pointerId !== event.pointerId ||
-        !previewShell ||
-        !container
-      ) {
-        return;
-      }
-
-      const nextX = dragState.baseX + (event.clientX - dragState.startX);
-      const nextY = dragState.baseY + (event.clientY - dragState.startY);
-      const containerWidth = container.clientWidth;
-      const containerHeight = container.clientHeight;
-      const previewWidth = previewShell.offsetWidth;
-      const previewHeight = previewShell.offsetHeight;
-      const baseLeft = containerWidth * 0.05;
-      const baseTop = containerHeight * 0.05;
-      const minX = -baseLeft + 8;
-      const maxX = containerWidth - previewWidth - baseLeft - 8;
-      const minY = -baseTop + 8;
-      const maxY = containerHeight - previewHeight - baseTop - 8;
-
-      this.cameraPreviewOffset = {
-        x: Math.min(Math.max(nextX, minX), maxX),
-        y: Math.min(Math.max(nextY, minY), maxY),
-      };
-    },
-    stopCameraPreviewDrag(event) {
-      if (
-        this.cameraPreviewDragState &&
-        event?.pointerId != null &&
-        this.cameraPreviewDragState.pointerId !== event.pointerId
-      ) {
-        return;
-      }
-
-      this.cameraPreviewDragState = null;
-      window.removeEventListener("pointermove", this.onCameraPreviewDrag);
-      window.removeEventListener("pointerup", this.stopCameraPreviewDrag);
-      window.removeEventListener("pointercancel", this.stopCameraPreviewDrag);
-    },
     toggleMotionDelegate() {
       const currentForcedDelegate =
         window.localStorage.getItem("ukm-motion-delegate");
@@ -617,6 +627,8 @@ h1 {
 #session {
   position: relative;
   flex: 1;
+  min-height: 0;
+  display: flex;
 }
 .chat-body {
   display: flex;
@@ -624,78 +636,182 @@ h1 {
   height: 100dvh;
   min-height: 100dvh;
   overflow: hidden;
-  /* background: radial-gradient(
-    61.17% 61.17% at 50% 50%,
-    #ebdcfe 56.77%,
-    #ffffff 100%
-  ); */
+  background:
+    radial-gradient(circle at top left, rgba(161, 102, 255, 0.2), transparent 24%),
+    radial-gradient(circle at right center, rgba(77, 208, 225, 0.12), transparent 20%),
+    linear-gradient(180deg, #120d1f 0%, #090710 100%);
 }
 
-.video-container1 {
-  position: absolute;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  width: 100vw;
-  height: calc(100dvh - var(--chat-sub-size));
-  max-height: calc((100vw / 2 -40px) / 4 * 3 + 60px);
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-.video-container2 {
-  position: absolute;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  width: calc(((100dvh - var(--chat-sub-size) - 20px) / 3) * 2 * var(--video-size));
-  height: calc(100dvh - var(--chat-sub-size));
-  max-height: calc(100vw * 3 / 2 / var(--video-size));
-  max-width: 100vw;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-.video-item {
-  position: relative;
+.chat-stage-shell {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
-  height: calc((100dvh - var(--chat-sub-size)) / 2 - 40px);
-  max-height: calc(100vw * 3 / 4 / var(--video-size));
-  max-width: calc(100vw / var(--video-size) - 40px);
-  margin: 20px;
-  text-align: center;
+  gap: 18px;
+  padding: 20px 20px 0;
+  overflow: auto;
 }
-/* 1:1일때 canvas 크기 */
-#avatarCanvas1,
-.my-real-video1 {
-  border: 3px solid purple;
-  border-radius: 20px;
-  box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
-  width: auto !important;
-  max-width: calc(100vw / 2 - 40px) !important;
-  height: calc(100dvh - var(--chat-sub-size) - 60px) !important;
-  max-height: calc((100vw / 2 - 40px) * 3 / 4) !important;
+
+.chat-stage-header {
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
 }
-/* 2:2일때 canvas 크기 */
-#avatarCanvas2,
-.my-real-video2 {
-  border: 3px solid purple;
-  border-radius: 20px;
-  box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
-  width: auto !important;
-  max-width: calc(100vw / var(--video-size) - 40px) !important;
-  height: calc((100dvh - var(--chat-sub-size)) / 2 - 80px) !important;
-  max-height: calc((100vw / var(--video-size) - 40px) * 3 / 4) !important;
+
+.chat-stage-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
 }
-.my-real-video1,
-.my-real-video2 {
+
+.chat-stage-kicker {
+  color: rgba(216, 197, 255, 0.82);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chat-stage-title {
+  color: #f8f5ff;
+  font-size: clamp(24px, 2vw, 34px);
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.chat-stage-description {
+  max-width: 780px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.chat-stage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.chat-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(18, 14, 31, 0.86);
+  color: #f5efff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.chat-stage {
+  width: 100%;
+  display: grid;
+  gap: clamp(14px, 2vw, 24px);
+  align-items: start;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.video-item {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.video-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top, rgba(151, 92, 255, 0.24), transparent 40%),
+    linear-gradient(180deg, #26193f 0%, #140f22 100%);
+  box-shadow:
+    0 24px 50px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.video-item-local .video-stage {
+  box-shadow:
+    0 30px 65px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.video-item-remote .video-stage {
+  background:
+    radial-gradient(circle at top, rgba(90, 207, 225, 0.16), transparent 40%),
+    linear-gradient(180deg, #1f1a34 0%, #130f22 100%);
+}
+
+#my-video {
+  isolation: isolate;
+}
+
+#my-video canvas[id^="avatarCanvas"],
+.my-real-video {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  object-fit: cover;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.my-real-video {
   transform: rotateY(180deg);
-  -webkit-transform: rotateY(180deg); /* Safari and Chrome */
-  -moz-transform: rotateY(180deg); /* Firefox */
+  -webkit-transform: rotateY(180deg);
+  -moz-transform: rotateY(180deg);
+  background: #120f1b;
 }
+
+.video-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 6px;
+}
+
+.video-card-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(245, 236, 255, 0.92);
+  color: #7442d8;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.video-item-remote .video-card-status {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(245, 239, 255, 0.96);
+}
+
+.nickName {
+  margin: 0;
+  color: #f7f4ff;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: right;
+}
+
 .tracking-preview {
   position: relative;
   width: 100%;
@@ -706,17 +822,10 @@ h1 {
   box-shadow: 0px 14px 32px rgba(0, 0, 0, 0.28);
 }
 .tracking-preview-shell {
-  position: absolute;
-  width: min(240px, 30%);
-  left: 5%;
-  top: 5%;
-  z-index: 2;
-  touch-action: none;
-  user-select: none;
-  cursor: grab;
+  width: clamp(220px, 24vw, 300px);
 }
 .tracking-preview-solo {
-  width: min(260px, 42%);
+  width: clamp(260px, 28vw, 360px);
 }
 .tracking-preview-hidden {
   position: absolute;
@@ -738,7 +847,6 @@ h1 {
 }
 .tracking-preview-debug {
   display: block;
-  width: min(240px, 30%);
 }
 .tracking-preview video,
 .tracking-preview canvas {
@@ -746,7 +854,7 @@ h1 {
   inset: 0;
   width: 100% !important;
   height: 100% !important;
-  object-fit: contain;
+  object-fit: cover;
 }
 .tracking-preview-active video {
   transform: rotateY(180deg);
@@ -775,6 +883,54 @@ h1 {
   cursor: pointer;
   backdrop-filter: blur(8px);
 }
+
+.chat-monitor-panel {
+  width: 100%;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 18px;
+  border-radius: 28px;
+  background: rgba(16, 12, 28, 0.82);
+  box-shadow:
+    0 20px 40px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.chat-monitor-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.chat-monitor-kicker {
+  color: rgba(213, 194, 255, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chat-monitor-title {
+  color: #f8f5ff;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.chat-monitor-description {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.chat-monitor-stage {
+  display: flex;
+  align-items: flex-start;
+}
+
 .motion-status {
   margin-top: 10px;
   padding: 8px 12px;
@@ -790,27 +946,78 @@ h1 {
 .motion-status.active {
   background: rgba(60, 28, 124, 0.78);
 }
-.nickName {
-  height: 20px;
-  margin-top: 10px;
+
+@media screen and (max-width: 1120px) {
+  .chat-stage-shell {
+    padding: 16px 16px 0;
+    gap: 14px;
+  }
+
+  .chat-stage-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .chat-stage-meta {
+    justify-content: flex-start;
+  }
+
+  .chat-monitor-panel {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .chat-monitor-stage {
+    width: 100%;
+  }
+
+  .tracking-preview-shell {
+    width: min(100%, 320px);
+  }
 }
 
 @media screen and (max-width: 760px) {
-  .video-item {
-    margin: 12px;
-    max-width: calc(100vw - 24px);
+  .chat-stage-shell {
+    padding: 12px 12px 0;
+    gap: 12px;
   }
 
-  #avatarCanvas1,
-  #avatarCanvas2,
-  .my-real-video1,
-  .my-real-video2 {
-    max-width: calc(100vw - 24px) !important;
+  .chat-stage-title {
+    font-size: 22px;
   }
 
-  .tracking-preview-shell,
-  .tracking-preview-debug {
-    width: min(170px, 38%);
+  .chat-stage-description {
+    font-size: 13px;
+  }
+
+  .chat-stage {
+    gap: 12px;
+  }
+
+  .video-stage {
+    border-radius: 22px;
+  }
+
+  .video-card-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .nickName {
+    text-align: left;
+  }
+
+  .chat-monitor-panel {
+    padding: 14px;
+    border-radius: 22px;
+  }
+
+  .chat-monitor-title {
+    font-size: 16px;
+  }
+
+  .chat-monitor-description {
+    font-size: 13px;
   }
 }
 </style>

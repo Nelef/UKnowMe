@@ -33,8 +33,8 @@ const CHAT_CAPTURE_FPS = 24;
 const CHAT_MOTION_PROCESS_FPS = 24;
 const CHAT_DESKTOP_CAMERA_SIZE = { width: 640, height: 480 };
 const CHAT_MOBILE_CAMERA_SIZE = { width: 480, height: 360 };
-const CHAT_DESKTOP_AVATAR_SIZE = { width: 640, height: 480 };
-const CHAT_MOBILE_AVATAR_SIZE = { width: 540, height: 405 };
+const CHAT_DESKTOP_AVATAR_SIZE = { width: 960, height: 720 };
+const CHAT_MOBILE_AVATAR_SIZE = { width: 720, height: 540 };
 
 const isAppleTouchDevice = () => {
   if (typeof navigator === "undefined") {
@@ -152,7 +152,6 @@ export const useChatStore = defineStore('chat', {
     otherPeople: [],
     motionCheck: true,
     time: "채팅시작!",
-    mobile: false,
     gameQ : "질문",
     gameA1 : "답1",
     gameA2 : "답2",
@@ -265,7 +264,6 @@ export const useChatStore = defineStore('chat', {
       this.otherPeople = [];
       this.heartRainFlag = false;
       this.ready = false;
-      this.mobile = false;
       this.accuseBtn = 0;
       this.gameBtn = 0;
       this.loadingProgress = 0;
@@ -1837,12 +1835,7 @@ export const useChatStore = defineStore('chat', {
         .forEach((previewElement) => previewElement.remove());
       this.invalidateTrackingPreviewElements();
 
-      let videoElement
-      if (this.mobile) {
-        videoElement = document.querySelector(".my-real-video2");
-      } else {
-        videoElement = document.querySelector(".my-real-video" + useMainStore().option.matchingRoom);
-      }
+      const videoElement = document.querySelector(".my-real-video");
       if (!videoElement) {
         console.warn("실제 카메라 비디오 요소를 찾을 수 없습니다.");
         return;

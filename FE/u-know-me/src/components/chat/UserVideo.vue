@@ -1,10 +1,15 @@
 <template>
-  <div class="video-item" v-if="participant">
-    <participant-media
-      :audio-track="participant.audioTrack"
-      :video-track="participant.videoTrack"
-    />
-    <div><p class="nickName">{{ displayName }}</p></div>
+  <div class="video-item video-item-remote" v-if="participant">
+    <div class="video-stage">
+      <participant-media
+        :audio-track="participant.audioTrack"
+        :video-track="participant.videoTrack"
+      />
+    </div>
+    <div class="video-card-footer">
+      <div class="video-card-status">상대 {{ index }}</div>
+      <p class="nickName">{{ displayName }}</p>
+    </div>
   </div>
 </template>
 
@@ -20,6 +25,7 @@ export default {
 
 	props: {
 		participant: Object,
+		index: Number,
 	},
 
 	computed: {

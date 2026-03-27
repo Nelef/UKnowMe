@@ -1,22 +1,11 @@
 <template>
-  <div>
-    <video
-      ref="videoElement"
-      :class="{
-        otherVideo1: main.option.matchingRoom == 1 && chat.mobile == false,
-        otherVideo2: main.option.matchingRoom == 2 || chat.mobile == true,
-      }"
-      autoplay
-      playsinline
-    />
+  <div class="participant-media">
+    <video ref="videoElement" class="participant-video" autoplay playsinline />
     <audio ref="audioElement" autoplay />
   </div>
 </template>
 
 <script>
-import { useMainStore } from "@/stores/main/main";
-import { useChatStore } from "@/stores/chat/chat";
-
 export default {
   name: "ParticipantMedia",
 
@@ -30,12 +19,6 @@ export default {
       attachedAudioTrack: null,
       attachedVideoTrack: null,
     };
-  },
-
-  setup() {
-    const main = useMainStore();
-    const chat = useChatStore();
-    return { main, chat };
   },
 
   watch: {
@@ -124,22 +107,16 @@ export default {
 </script>
 
 <style>
-.otherVideo1 {
-  border: 3px solid purple;
-  border-radius: 20px;
-  box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
-  max-width: calc(100vw / 2 - 40px);
-  height: calc(100dvh - var(--chat-sub-size) - 60px);
-  max-height: calc((100vw / 2 - 40px) * 3 / 4);
-  object-fit: cover;
+.participant-media {
+  width: 100%;
+  height: 100%;
 }
-.otherVideo2 {
-  border: 3px solid purple;
-  border-radius: 20px;
-  box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
-  max-width: calc(100vw / var(--video-size) - 40px);
-  height: calc((100dvh - var(--chat-sub-size)) / 2 - 80px);
-  max-height: calc((100vw / var(--video-size) - 40px) * 3 / 4);
+
+.participant-video {
+  width: 100%;
+  height: 100%;
+  display: block;
   object-fit: cover;
+  background: #161223;
 }
 </style>
