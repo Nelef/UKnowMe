@@ -1,81 +1,76 @@
 <template>
-  <div style="height: var(--chat-sub-size)"><!-- 형상 유지를 위한 div --></div>
-  <div class="chat-sub" ref="chatSubRoot">
-    <div class="chat-keyword-container">
+  <div class="chat-sub-spacer" aria-hidden="true"></div>
+
+  <div class="chat-sub">
+    <section class="chat-keyword-container">
       <div class="keyword-box">
-        <div class="keyword-content"></div>
-      </div>
-    </div>
-
-    <div class="chat-love-container">
-      <div id="love-container">
-        <div class="heart-img" @click="love()">
-          <img class="heart-img-src" src="@/assets/main/heart.png" alt="" />
+        <div class="keyword-content">
+          <p
+            v-for="message in chat.chatMessages"
+            :key="message.id"
+            class="chat-message"
+          >
+            <template v-if="message.type === 'keyword'">
+              {{ message.time }} :
+              <span class="chat-message-keyword">{{ message.keyword }}</span>
+              은(는) 어떠신가요?
+            </template>
+            <template v-else>
+              {{ message.time }} : {{ message.text }}
+            </template>
+          </p>
         </div>
+      </div>
+    </section>
+
+    <section class="chat-love-container">
+      <div class="chat-love-stage">
+        <button type="button" class="heart-img" @click="love()">
+          <img class="heart-img-src" src="@/assets/main/heart.png" alt="" />
+        </button>
         <div
+          v-for="delay in heartDelays"
+          :key="`desktop-heart-${delay}`"
           :class="{
-            circle: this.success === false,
-            'success-circle': this.success === true,
+            circle: success === false,
+            'success-circle': success === true,
           }"
-          style="animation-delay: 0s"
-        ></div>
-        <div
-          :class="{
-            circle: this.success === false,
-            'success-circle': this.success === true,
-          }"
-          style="animation-delay: 1s"
-        ></div>
-        <div
-          :class="{
-            circle: this.success === false,
-            'success-circle': this.success === true,
-          }"
-          style="animation-delay: 2s"
-        ></div>
-        <div
-          :class="{
-            circle: this.success === false,
-            'success-circle': this.success === true,
-          }"
-          style="animation-delay: 3s"
+          :style="{ animationDelay: `${delay}s` }"
         ></div>
       </div>
-    </div>
+    </section>
 
-    <div class="chat-icon-container">
+    <section class="chat-icon-container">
       <div class="option-btn-list">
         <div class="option">
-          <button
-            class="chat-btn-lg"
-            @click="openBalanceGame()"
-          >
+          <button type="button" class="chat-btn-lg" @click="openBalanceGame()">
             <img src="@/assets/chat/game-img.png" alt="" />
             <div>밸런스 게임</div>
           </button>
-          <button class="chat-btn-lg" @click="openAccuseModal()">
+          <button type="button" class="chat-btn-lg" @click="openAccuseModal()">
             <img src="@/assets/chat/accuse-img.png" alt="" />
             <div>신고하기</div>
           </button>
         </div>
         <div class="option">
-          <button class="chat-btn-lg motionBtn" @click="chat.motionClick()">
+          <button
+            type="button"
+            class="chat-btn-lg motionBtn"
+            @click="chat.motionClick()"
+          >
             <img
+              v-if="chat.motionCheck == true"
               src="@/assets/chat/option-on-img.png"
               alt=""
-              v-if="chat.motionCheck == true"
             />
             <img
+              v-if="chat.motionCheck == false"
               src="@/assets/chat/option-off-img.png"
               alt=""
-              v-if="chat.motionCheck == false"
             />
             <div>모션 인식</div>
           </button>
-          <button
-            @click="chat.leaveSession()"
-            class="chat-btn-lg"
-          >
+          <button type="button" class="chat-btn-lg" @click="chat.leaveSession()">
             <img src="@/assets/chat/exit-img.png" alt="" />
             <div>나가기</div>
           </button>
@@ -84,106 +79,115 @@
           <img src="@/assets/chat/youknowme-img.png" alt="" />
         </div>
       </div>
-    </div>
+    </section>
   </div>
-  <div class="chat-sub-mobile" ref="chatSubMobileRoot">
-    <div class="chat-keyword-container">
+
+  <div
+    :class="[
+      'chat-sub-mobile',
+      { 'chat-sub-mobile-expanded': chatExpand },
+    ]"
+  >
+    <section class="chat-keyword-container">
       <div class="keyword-box">
-        <div
-          class="keyword-content-mobile"
-          ref="keywordContentMobile"
-          @click="chatSubMobileClick()"
-        ></div>
+        <div class="keyword-content-mobile" @click="chatSubMobileClick()">
+          <p
+            v-for="message in chat.chatMessages"
+            :key="`${message.id}-mobile`"
+            class="chat-message"
+          >
+            <template v-if="message.type === 'keyword'">
+              {{ message.time }} :
+              <span class="chat-message-keyword">{{ message.keyword }}</span>
+              은(는) 어떠신가요?
+            </template>
+            <template v-else>
+              {{ message.time }} : {{ message.text }}
+            </template>
+          </p>
+        </div>
       </div>
-    </div>
+    </section>
+
     <div class="chat-sub-mobile-child">
-      <div class="chat-left-container" style="min-width: 160px; height: 300px">
-        <div class="option-btn-list" style="margin: auto 0px">
-          <div class="option" style="margin-left: auto; margin-right: 0">
-            <button class="chat-btn-lg-mobile" @click="openBalanceGame()">
+      <section class="chat-left-container">
+        <div class="option-btn-list option-btn-list-mobile">
+          <div class="option option-mobile option-mobile-end">
+            <button
+              type="button"
+              class="chat-btn-lg-mobile"
+              @click="openBalanceGame()"
+            >
               <img src="@/assets/chat/game-img.png" alt="" />
               <div>밸런스 게임</div>
             </button>
-            <button class="chat-btn-lg-mobile" @click="openAccuseModal()">
+            <button
+              type="button"
+              class="chat-btn-lg-mobile"
+              @click="openAccuseModal()"
+            >
               <img src="@/assets/chat/accuse-img.png" alt="" />
               <div>신고하기</div>
             </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div class="chat-love-container" style="min-width: 200px; height: 300px">
-        <div id="love-container">
-          <div class="heart-img" @click="love()">
+      <section class="chat-love-container chat-love-container-mobile">
+        <div class="chat-love-stage">
+          <button type="button" class="heart-img" @click="love()">
             <img class="heart-img-src" src="@/assets/main/heart.png" alt="" />
-          </div>
+          </button>
           <div
+            v-for="delay in heartDelays"
+            :key="`mobile-heart-${delay}`"
             :class="{
-              circle: this.success === false,
-              'success-circle': this.success === true,
+              circle: success === false,
+              'success-circle': success === true,
             }"
-            style="animation-delay: 0s"
-          ></div>
-          <div
-            :class="{
-              circle: this.success === false,
-              'success-circle': this.success === true,
-            }"
-            style="animation-delay: 1s"
-          ></div>
-          <div
-            :class="{
-              circle: this.success === false,
-              'success-circle': this.success === true,
-            }"
-            style="animation-delay: 2s"
-          ></div>
-          <div
-            :class="{
-              circle: this.success === false,
-              'success-circle': this.success === true,
-            }"
-            style="animation-delay: 3s"
+            :style="{ animationDelay: `${delay}s` }"
           ></div>
         </div>
-      </div>
+      </section>
 
-      <div class="chat-right-container" style="min-width: 160px; height: 300px">
-        <div class="option-btn-list" style="margin: auto 0px">
-          <div class="option" style="margin-left: 0; margin-right: auto">
+      <section class="chat-right-container">
+        <div class="option-btn-list option-btn-list-mobile">
+          <div class="option option-mobile option-mobile-start">
             <button
+              type="button"
               class="chat-btn-lg-mobile motionBtn"
               @click="chat.motionClick()"
             >
               <img
+                v-if="chat.motionCheck == true"
                 src="@/assets/chat/option-on-img.png"
                 alt=""
-                v-if="chat.motionCheck == true"
               />
               <img
+                v-if="chat.motionCheck == false"
                 src="@/assets/chat/option-off-img.png"
                 alt=""
-                v-if="chat.motionCheck == false"
               />
               <div>모션 인식</div>
             </button>
             <button
-              @click="chat.leaveSession()"
+              type="button"
               class="chat-btn-lg-mobile"
+              @click="chat.leaveSession()"
             >
               <img src="@/assets/chat/exit-img.png" alt="" />
               <div>나가기</div>
             </button>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   </div>
 </template>
 
 <script>
 import { useChatStore } from "@/stores/chat/chat";
-import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted } from "vue";
 import { useMainStore } from "@/stores/main/main";
 
 export default {
@@ -191,21 +195,17 @@ export default {
     return {
       success: false,
       chatExpand: false,
+      heartDelays: [0, 1, 2, 3],
     };
   },
   setup() {
     const chat = useChatStore();
     const main = useMainStore();
-    const chatSubRoot = ref(null);
-    const chatSubMobileRoot = ref(null);
-    const keywordContentMobile = ref(null);
     let mediaViewContent = null;
     let viewChangeHandler = null;
 
     onMounted(() => {
       nextTick(() => {
-        var chatSub = chatSubRoot.value;
-        var chatSubMobile = chatSubMobileRoot.value;
         const renameAvatarCanvas = (fromId, toId) => {
           const avatarCanvas = document.getElementById(fromId);
           if (avatarCanvas) {
@@ -214,37 +214,28 @@ export default {
         };
 
         const applyResponsiveLayout = (isMobile) => {
-          if (!chatSub || !chatSubMobile) {
-            return;
-          }
+          const isOneToOneRoom = String(main.option.matchingRoom) === "1";
 
-          if (isMobile) {
-            chatSub.style.bottom = "-200px";
-            chatSubMobile.style.left = "50%";
+          document.documentElement.style.setProperty(
+            "--chat-sub-size",
+            isMobile ? "400px" : "200px"
+          );
+
+          if (isOneToOneRoom) {
             document.documentElement.style.setProperty(
-              "--chat-sub-size",
-              "400px"
+              "--video-size",
+              isMobile ? "1" : "2"
             );
+            chat.mobile = isMobile;
 
-            if (main.option.matchingRoom == "1") {
-              document.documentElement.style.setProperty("--video-size", "1");
-              chat.mobile = true;
-
+            if (isMobile) {
               renameAvatarCanvas("avatarCanvas1", "avatarCanvas2");
-            }
-          } else {
-            chatSub.style.bottom = "0px";
-            chatSubMobile.style.left = "-300px";
-            document.documentElement.style.setProperty(
-              "--chat-sub-size",
-              "200px"
-            );
-            if (main.option.matchingRoom == "1") {
-              document.documentElement.style.setProperty("--video-size", "2");
-              chat.mobile = false;
-
+            } else {
               renameAvatarCanvas("avatarCanvas2", "avatarCanvas1");
             }
+          } else {
+            document.documentElement.style.setProperty("--video-size", "2");
+            chat.mobile = false;
           }
         };
 
@@ -267,9 +258,6 @@ export default {
     return {
       chat,
       main,
-      chatSubRoot,
-      chatSubMobileRoot,
-      keywordContentMobile,
     };
   },
   methods: {
@@ -296,12 +284,6 @@ export default {
     },
     openBalanceGame() {
       this.chat.balanceClick();
-
-      if (this.chat.soloMode) {
-        return;
-      }
-
-      this.chat.gameBtn = 1;
     },
     openAccuseModal() {
       if (this.chat.soloMode) {
@@ -314,18 +296,7 @@ export default {
       this.chat.accuseBtn = 1;
     },
     chatSubMobileClick() {
-      const keywordContentMobile = this.keywordContentMobile;
-      if (!keywordContentMobile) {
-        return;
-      }
-
-      if (!this.chatExpand) {
-        this.chatExpand = true;
-        keywordContentMobile.style.height = "calc(100vh - 400px)";
-      } else {
-        this.chatExpand = false;
-        keywordContentMobile.style.height = "50px";
-      }
+      this.chatExpand = !this.chatExpand;
     },
   },
 };
@@ -334,205 +305,330 @@ export default {
 <style>
 /* 전역변수 */
 :root {
-  /* 비디오사이즈 1=모바일 2=데탑 */
   --video-size: 2;
-  /* 하단바 사이즈 */
   --chat-sub-size: 200px;
 }
 
-.chat-sub {
-  position: absolute;
-  display: flex;
-  width: 100%;
-  min-width: 10px;
-  height: max-content;
-  bottom: 0px;
-  transition: 0.5s;
-}
-/* 모바일 */
-.chat-sub-mobile {
-  position: absolute;
-  display: flex;
-  bottom: 0px;
-  left: 50%;
-  flex-direction: column;
-  height: max-content;
-  transform: translate(-50%, 0%);
-  transition: 0.5s;
-}
-.chat-sub-mobile-child {
-  display: flex;
-  height: max-content;
-}
-@media screen and (min-width: 1120px) {
-  .chat-sub {
-    bottom: 0px;
-  }
-  .chat-sub-mobile {
-    left: -300px;
-  }
-  :root {
-    --chat-sub-size: 200px;
-  }
-}
-/* 모바일 */
-@media screen and (max-width: 1120px) {
-  .chat-sub {
-    bottom: -200px;
-  }
-  .chat-sub-mobile {
-    left: 50%;
-  }
-  :root {
-    --chat-sub-size: 400px;
-  }
-}
-.chat-keyword-container {
-  display: flex;
-  min-width: 400px;
-  height: 200px;
-  flex: 1;
-}
-.chat-love-container {
-  position: relative;
-  display: flex;
-  text-align: center;
-}
-.chat-icon-container {
-  display: flex;
-  flex-direction: column;
-  min-width: 400px;
-  height: 200px;
-  flex: 1;
+.chat-sub-spacer {
+  height: var(--chat-sub-size);
+  flex: 0 0 auto;
 }
 
-/* 모바일 */
-.chat-left-container {
-  display: flex;
-  flex-direction: column;
-  min-width: 400px;
-  height: 200px;
-  flex: 1;
+.chat-sub,
+.chat-sub-mobile {
+  position: absolute;
+  bottom: 0;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 14px 20px 18px;
+  z-index: 3;
+  transition: transform 0.35s ease, opacity 0.35s ease;
 }
-.chat-right-container {
+
+.chat-sub {
+  left: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 1.2fr) auto minmax(280px, 1fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.chat-sub-mobile {
+  left: 50%;
   display: flex;
   flex-direction: column;
-  min-width: 400px;
-  height: 200px;
-  flex: 1;
+  gap: 12px;
+  transform: translate(-50%, 0);
+}
+
+.chat-sub-mobile-child {
+  display: grid;
+  grid-template-columns: minmax(132px, 1fr) auto minmax(132px, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.chat-keyword-container,
+.chat-icon-container,
+.chat-left-container,
+.chat-right-container {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.chat-keyword-container {
+  flex: 1 1 auto;
+}
+
+.chat-love-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.chat-love-stage {
+  position: relative;
+  width: clamp(190px, 18vw, 230px);
+  min-width: 190px;
+  height: 180px;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+}
+
+.chat-love-container-mobile .chat-love-stage {
+  width: 180px;
+  min-width: 180px;
+}
+
+.chat-icon-container,
+.chat-left-container,
+.chat-right-container {
+  justify-content: center;
 }
 
 .option-btn-list {
-  min-width: 150px;
-  height: 70%;
-  margin: auto 30px;
+  width: 100%;
+  min-width: 0;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
 }
+
+.option-btn-list-mobile {
+  justify-content: center;
+}
+
 .option {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  margin-right: 20px;
+  gap: 14px;
 }
+
+.option-mobile {
+  width: 100%;
+}
+
+.option-mobile-end {
+  align-items: flex-end;
+}
+
+.option-mobile-start {
+  align-items: flex-start;
+}
+
+.chat-btn-lg,
+.chat-btn-lg-mobile {
+  border: 0;
+  outline: 0;
+  cursor: pointer;
+  box-shadow: 0px 2.72109px 2.72109px rgba(0, 0, 0, 0.25);
+  border-radius: 20px;
+  background-color: #ebdcfe;
+  color: #2a2140;
+  transition: background-color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+
 .chat-btn-lg {
   width: 190px;
-  height: 60px;
+  min-height: 60px;
   padding: 10px 15px;
-  background-color: #ebdcfe;
-  border: 0;
-  outline: 0;
-  box-shadow: 0px 2.72109px 2.72109px rgba(0, 0, 0, 0.25);
-  border-radius: 20.4082px;
-  cursor: pointer;
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 10px;
 }
+
 .chat-btn-lg-mobile {
-  width: 150px;
-  height: auto;
-  padding: 10px 15px;
-  background-color: #ebdcfe;
-  border: 0;
-  outline: 0;
-  box-shadow: 0px 2.72109px 2.72109px rgba(0, 0, 0, 0.25);
-  border-radius: 20.4082px;
-  cursor: pointer;
+  width: min(100%, 150px);
+  min-height: 96px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
+
 .chat-btn-lg:hover,
 .chat-btn-lg-mobile:hover {
   background-color: #d5b6ff;
-  color: black;
+  transform: translateY(-1px);
 }
+
+.chat-btn-lg:disabled,
+.chat-btn-lg-mobile:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .chat-btn-lg div,
 .chat-btn-lg-mobile div {
-  width: 120px;
-  height: 30px;
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 40px;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
 }
+
+.chat-btn-lg div {
+  flex: 1 1 auto;
+}
+
 .chat-btn-lg img,
 .chat-btn-lg-mobile img {
-  margin: auto;
   width: 40px;
   height: 40px;
+  object-fit: contain;
 }
+
 .keyword-box {
-  min-width: 150px;
-  width: 500px;
-  height: 70%;
-  margin: auto 30px;
+  width: min(100%, 560px);
+  margin: auto;
   background-color: #ebdcfead;
   backdrop-filter: blur(5px);
   box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
   border-radius: 20px;
-  flex: 1;
   font-weight: 600;
-  overflow: auto;
+  overflow: hidden;
 }
+
 .keyword-content,
 .keyword-content-mobile {
-  margin: 2% 5%;
-  transition: 0.5s;
+  margin: 16px 20px;
+  overflow: auto;
+  transition: height 0.35s ease;
 }
+
+.keyword-content {
+  min-height: 108px;
+  max-height: 136px;
+}
+
 .keyword-content-mobile {
   height: 50px;
+  cursor: pointer;
 }
-.keyword-box::-webkit-scrollbar {
+
+.chat-sub-mobile-expanded .keyword-content-mobile {
+  height: min(320px, calc(100dvh - 220px));
+}
+
+.keyword-content::-webkit-scrollbar,
+.keyword-content-mobile::-webkit-scrollbar {
   width: 10px;
 }
-.keyword-box::-webkit-scrollbar-thumb {
+
+.keyword-content::-webkit-scrollbar-thumb,
+.keyword-content-mobile::-webkit-scrollbar-thumb {
   background: #c1c3fc;
   border-radius: 10px;
 }
+
+.chat-message {
+  margin: 0 0 10px;
+  color: #2f2643;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+
+.chat-message:last-child {
+  margin-bottom: 0;
+}
+
+.chat-message-keyword {
+  color: #d82946;
+  font-weight: 800;
+}
+
 .logo {
-  width: 100%;
+  min-width: 0;
   display: flex;
+  align-items: center;
   justify-content: center;
-  transition: 0.5s;
+  transition: opacity 0.35s ease;
 }
-@media screen and (max-width: 1450px) {
-  .logo {
-    opacity: 0;
-  }
-}
+
 .logo img {
   width: auto;
-  height: 100%;
+  max-height: 136px;
+  object-fit: contain;
 }
+
+.heart-img {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: none;
+  background-color: white;
+  z-index: 1;
+  padding: 5px;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0px 1.92647px 1.92647px rgba(0, 0, 0, 0.25));
+  transition: width 0.5s ease, height 0.5s ease, filter 0.2s ease;
+}
+
+.heart-img:hover {
+  filter: brightness(90%);
+}
+
+.heart-img-src {
+  width: 50px;
+  height: 50px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transition: 0.5s;
+  animation-name: heartSpin;
+  animation-duration: 0s;
+  animation-iteration-count: infinite;
+}
+
+.circle,
 .success-circle {
   border-radius: 50%;
   width: 80px;
   height: 80px;
-  background-color: red;
   position: absolute;
   opacity: 0;
-
   animation: scaleIn 4s infinite cubic-bezier(0.36, 0.11, 0.89, 0.32);
 }
+
+.circle {
+  background-color: #a056ff;
+}
+
+.success-circle {
+  background-color: red;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.5, 0.5);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2.5, 2.5);
+    opacity: 0;
+  }
+}
+
+@keyframes heartSpin {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
 @keyframes heartScaleIn {
   0% {
     transform: translate(-50%, -50%) scale(1);
@@ -542,6 +638,78 @@ export default {
   }
   100% {
     transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@media screen and (max-width: 1450px) {
+  .logo {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+  }
+}
+
+@media screen and (min-width: 1121px) {
+  .chat-sub {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .chat-sub-mobile {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, 100%);
+  }
+
+  :root {
+    --chat-sub-size: 200px;
+  }
+}
+
+@media screen and (max-width: 1120px) {
+  .chat-sub {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(100%);
+  }
+
+  .chat-sub-mobile {
+    opacity: 1;
+  }
+
+  :root {
+    --chat-sub-size: 400px;
+  }
+}
+
+@media screen and (max-width: 760px) {
+  .chat-sub-mobile {
+    padding: 12px 12px 16px;
+  }
+
+  .chat-sub-mobile-child {
+    grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr);
+    gap: 8px;
+  }
+
+  .chat-love-stage,
+  .chat-love-container-mobile .chat-love-stage {
+    width: 150px;
+    min-width: 150px;
+    height: 150px;
+  }
+
+  .chat-btn-lg-mobile {
+    width: min(100%, 132px);
+    min-height: 90px;
+  }
+
+  .chat-btn-lg-mobile div {
+    font-size: 16px;
+  }
+
+  .keyword-content-mobile {
+    margin: 14px 16px;
   }
 }
 </style>

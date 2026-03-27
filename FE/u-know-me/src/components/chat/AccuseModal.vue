@@ -1,9 +1,9 @@
 <template>
   <div class="accuse-modal-bg">
     <div class="accuse-modal">
-      <div class="close-btn" @click="accuseBtn = 0">
+      <button type="button" class="close-btn" @click="accuseBtn = 0">
         <i class="fa-solid fa-xmark x-btn"></i>
-      </div>
+      </button>
       <div class="accuse-modal-container">
         <div class="accuse-modal-title">신고하기</div>
         <div class="accuse-modal-content">
@@ -14,10 +14,19 @@
         <div class="accuse-modal-content-sub">(비매너행위* : 욕설, 혐오 발언, 부적절한 행동)</div>
 
 
-        <div class="accuse-btn-list" v-for="(people, i ) in otherPeople" :people="people" :key="i">
-          <button v-on:click="createReport(account.currentUser.seq, people.userSeq), accuseBtn = 0"
-            class="accuse-btn">{{ people.userName }}</button>
-
+        <div
+          v-for="(people, i) in otherPeople"
+          :key="i"
+          class="accuse-btn-list"
+          :people="people"
+        >
+          <button
+            type="button"
+            class="accuse-btn"
+            @click="createReport(account.currentUser.seq, people.userSeq)"
+          >
+            {{ people.userName }}
+          </button>
         </div>
       </div>
     </div>
@@ -62,11 +71,8 @@ export default {
       })
         .then(res => {
           console.log(res);
-          const modalOff = document.querySelector(".close-btn");
-          console.log(modalOff)
           alert("신고되었습니다");
-          modalOff.accuseBtn = 0;
-
+          this.accuseBtn = 0;
         })
         .catch(err => {
           console.error(err.response)
@@ -80,7 +86,7 @@ export default {
 <style>
 .accuse-modal-bg {
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   z-index: 9;
   background: rgba(0, 0, 0, 0.5);
   position: fixed;
@@ -90,7 +96,7 @@ export default {
 
 .accuse-modal {
   position: relative;
-  width: 440px;
+  width: min(440px, calc(100vw - 32px));
   min-height: 350px;
   background: #ffffff;
   box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
@@ -98,6 +104,25 @@ export default {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
+}
+
+.accuse-modal .close-btn {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: #f1e4ff;
+  color: #6d38d1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.accuse-modal .x-btn {
+  font-size: 24px;
 }
 
 .accuse-modal-container {
@@ -135,6 +160,10 @@ export default {
   width: 200px;
   font-size: 15px;
   font-weight: 700;
+  border-radius: 18px;
+  border: none;
+  min-height: 48px;
+  cursor: pointer;
 }
 
 .accuse-btn:hover {
@@ -145,5 +174,23 @@ export default {
 .bad-manners {
   color: rgb(153, 84, 199);
 
+}
+
+@media screen and (max-width: 640px) {
+  .accuse-modal-container {
+    padding: 28px 20px 24px;
+  }
+
+  .accuse-modal-title {
+    font-size: 26px;
+  }
+
+  .accuse-modal-content {
+    line-height: 1.7;
+  }
+
+  .accuse-btn {
+    width: 100%;
+  }
 }
 </style>

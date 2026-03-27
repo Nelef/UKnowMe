@@ -621,7 +621,9 @@ h1 {
 .chat-body {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
   /* background: radial-gradient(
     61.17% 61.17% at 50% 50%,
     #ebdcfe 56.77%,
@@ -635,7 +637,7 @@ h1 {
   flex-wrap: wrap;
   justify-content: center;
   width: 100vw;
-  height: calc(100vh - var(--chat-sub-size));
+  height: calc(100dvh - var(--chat-sub-size));
   max-height: calc((100vw / 2 -40px) / 4 * 3 + 60px);
   left: 50%;
   top: 50%;
@@ -646,8 +648,8 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  width: calc((100vh - var(--chat-sub-size) -20px) / 3 * 2 * var(--video-size));
-  height: calc(100vh - var(--chat-sub-size));
+  width: calc(((100dvh - var(--chat-sub-size) - 20px) / 3) * 2 * var(--video-size));
+  height: calc(100dvh - var(--chat-sub-size));
   max-height: calc(100vw * 3 / 2 / var(--video-size));
   max-width: 100vw;
   left: 50%;
@@ -656,7 +658,11 @@ h1 {
 }
 .video-item {
   position: relative;
-  height: calc((100vh - var(--chat-sub-size)) / 2 - 40px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: calc((100dvh - var(--chat-sub-size)) / 2 - 40px);
   max-height: calc(100vw * 3 / 4 / var(--video-size));
   max-width: calc(100vw / var(--video-size) - 40px);
   margin: 20px;
@@ -670,7 +676,7 @@ h1 {
   box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
   width: auto !important;
   max-width: calc(100vw / 2 - 40px) !important;
-  height: calc(100vh - var(--chat-sub-size) - 60px) !important;
+  height: calc(100dvh - var(--chat-sub-size) - 60px) !important;
   max-height: calc((100vw / 2 - 40px) * 3 / 4) !important;
 }
 /* 2:2일때 canvas 크기 */
@@ -680,8 +686,8 @@ h1 {
   border-radius: 20px;
   box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
   width: auto !important;
-  max-width: calc(100vw / var(--chat-sub-size) - 40px) !important;
-  height: calc((100vh - var(--chat-sub-size)) / 2 - 80px) !important;
+  max-width: calc(100vw / var(--video-size) - 40px) !important;
+  height: calc((100dvh - var(--chat-sub-size)) / 2 - 80px) !important;
   max-height: calc((100vw / var(--video-size) - 40px) * 3 / 4) !important;
 }
 .my-real-video1,
@@ -701,7 +707,7 @@ h1 {
 }
 .tracking-preview-shell {
   position: absolute;
-  width: 30%;
+  width: min(240px, 30%);
   left: 5%;
   top: 5%;
   z-index: 2;
@@ -786,5 +792,25 @@ h1 {
 }
 .nickName {
   height: 20px;
+  margin-top: 10px;
+}
+
+@media screen and (max-width: 760px) {
+  .video-item {
+    margin: 12px;
+    max-width: calc(100vw - 24px);
+  }
+
+  #avatarCanvas1,
+  #avatarCanvas2,
+  .my-real-video1,
+  .my-real-video2 {
+    max-width: calc(100vw - 24px) !important;
+  }
+
+  .tracking-preview-shell,
+  .tracking-preview-debug {
+    width: min(170px, 38%);
+  }
 }
 </style>

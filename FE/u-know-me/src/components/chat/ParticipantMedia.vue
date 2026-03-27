@@ -129,15 +129,17 @@ export default {
   border-radius: 20px;
   box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
   max-width: calc(100vw / 2 - 40px);
-  height: calc(100vh - var(--chat-sub-size) - 60px);
+  height: calc(100dvh - var(--chat-sub-size) - 60px);
   max-height: calc((100vw / 2 - 40px) * 3 / 4);
+  object-fit: cover;
 }
 .otherVideo2 {
   border: 3px solid purple;
   border-radius: 20px;
   box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
   max-width: calc(100vw / var(--video-size) - 40px);
-  height: calc((100vh - var(--chat-sub-size)) / 2 - 80px);
+  height: calc((100dvh - var(--chat-sub-size)) / 2 - 80px);
   max-height: calc((100vw / var(--video-size) - 40px) * 3 / 4);
+  object-fit: cover;
 }
 </style>

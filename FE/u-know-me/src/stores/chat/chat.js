@@ -161,6 +161,7 @@ export const useChatStore = defineStore('chat', {
     leavingSession: false,
     soloMode: false,
     liveKitQuotaModal: false,
+    chatMessages: [],
     trackingDebugPreviewEnabled: true,
     debugLoggingEnabled: false,
     debugMessages: [],
@@ -268,6 +269,7 @@ export const useChatStore = defineStore('chat', {
       this.accuseBtn = 0;
       this.gameBtn = 0;
       this.loadingProgress = 0;
+      this.chatMessages = [];
       this.debugMessages = [];
       this.motionFaceCount = 0;
       this.motionPoseCount = 0;
@@ -1735,13 +1737,18 @@ export const useChatStore = defineStore('chat', {
     },
 
     systemMessagePrint(text) {
-      let p = document.createElement("p");
-      let p2 = document.createElement("p");
-      p.textContent = this.time + " : " + text;
-      p2.textContent =  this.time + " : " + text;
+      this.prependChatMessage({
+        type: "system",
+        text,
+      });
+    },
 
-      document.querySelector(".keyword-content-mobile").prepend(p);
-      document.querySelector(".keyword-content").prepend(p2);
+    prependChatMessage(message) {
+      this.chatMessages.unshift({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        time: this.time,
+        ...message,
+      });
     },
 
     balanceClick() {
@@ -1874,13 +1881,10 @@ export const useChatStore = defineStore('chat', {
         })
     },
     keywordMessagePrint(text) {
-      let p = document.createElement("p");
-      let p2 = document.createElement("p");
-      p.innerHTML = `${this.time} : <span style="color:red;">${text}</span> 은(는) 어떠신가요?`;
-      p2.innerHTML =  `${this.time} : <span style="color:red;">${text}</span> 은(는) 어떠신가요?`;
-
-      document.querySelector(".keyword-content-mobile").prepend(p);
-      document.querySelector(".keyword-content").prepend(p2);
+      this.prependChatMessage({
+        type: "keyword",
+        keyword: text,
+      });
     },
   },
 })

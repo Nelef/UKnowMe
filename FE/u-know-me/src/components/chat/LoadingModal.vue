@@ -3,7 +3,12 @@
     <div class="loading-modal">
       <img class="loading-img" src="@/assets/chat/loding_anim.gif" alt="ani">
       <div class="loading-text-title">
-        <span>LOADING</span>
+        <span
+          v-for="(letter, index) in loadingLetters"
+          :key="`${letter}-${index}`"
+        >
+          {{ letter }}
+        </span>
       </div>
       <div class="loading-progress">
         <div class="loading-progress-bar" :style="{ width: `${chat.loadingProgress}%` }"></div>
@@ -20,7 +25,8 @@ import { useChatStore } from "@/stores/chat/chat";
 export default {
   setup() {
     const chat = useChatStore();
-    return { chat };
+    const loadingLetters = ["L", "O", "A", "D", "I", "N", "G"];
+    return { chat, loadingLetters };
   },
 };
 </script>
@@ -28,7 +34,7 @@ export default {
 <style>
 .loading-modal-bg {
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   z-index: 9;
   background: rgba(0, 0, 0, 0.5);
   position: fixed;
@@ -53,27 +59,31 @@ export default {
 }
 .loading-text-title span {
   display: inline-block;
-  margin: 0 -0.05em;
-  animation: loading 0.5s infinite alternate;
+  margin: 0 0.02em;
+  animation: loading-text-title 0.5s infinite alternate;
 }
 
-loading-text-title span:nth-child(3) {
+.loading-text-title span:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.loading-text-title span:nth-child(3) {
   animation-delay: 0.2s;
 }
 
-loading-text-title span:nth-child(4) {
+.loading-text-title span:nth-child(4) {
   animation-delay: 0.3s;
 }
 
-loading-text-title span:nth-child(5) {
+.loading-text-title span:nth-child(5) {
   animation-delay: 0.4s;
 }
 
-loading-text-title span:nth-child(6) {
+.loading-text-title span:nth-child(6) {
   animation-delay: 0.5s;
 }
 
-loading-text-title span:nth-child(7) {
+.loading-text-title span:nth-child(7) {
   animation-delay: 0.6s;
 }
 
