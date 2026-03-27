@@ -12,8 +12,11 @@ export default {
 html, body, #app {
   height: 100%;
   width: 100%;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   position: fixed;
+  inset: 0;
 }
 div, p, span, button, label {
   font-family: 'NanumSquareRound';

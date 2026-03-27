@@ -35,6 +35,7 @@ const CHAT_DESKTOP_CAMERA_SIZE = { width: 640, height: 480 };
 const CHAT_MOBILE_CAMERA_SIZE = { width: 480, height: 360 };
 const CHAT_DESKTOP_AVATAR_SIZE = { width: 960, height: 720 };
 const CHAT_MOBILE_AVATAR_SIZE = { width: 720, height: 540 };
+const CHAT_MOTION_MIN_CONFIDENCE = 0.45;
 
 const isAppleTouchDevice = () => {
   if (typeof navigator === "undefined") {
@@ -442,7 +443,7 @@ export const useChatStore = defineStore('chat', {
         ) {
           lastPreviewVideoWidth = videoElement.videoWidth;
           lastPreviewVideoHeight = videoElement.videoHeight;
-          this.syncTrackingPreviewAspectRatio(
+          this.resetTrackingForInputResize(
             lastPreviewVideoWidth,
             lastPreviewVideoHeight
           );
@@ -461,22 +462,52 @@ export const useChatStore = defineStore('chat', {
           active = true;
           this.prepareVideoElement(videoElement);
           const cameraSize = getTrackingCameraSize();
-          mediaStream = await navigator.mediaDevices.getUserMedia({
-            audio: false,
-            video: {
-              width: {
-                ideal: cameraSize.width,
-                max: CHAT_DESKTOP_CAMERA_SIZE.width,
-              },
-              height: {
-                ideal: cameraSize.height,
-                max: CHAT_DESKTOP_CAMERA_SIZE.height,
-              },
-              facingMode: "user",
+          const preferredVideoConstraints = {
+            width: {
+              ideal: cameraSize.width,
             },
-          });
+            height: {
+              ideal: cameraSize.height,
+            },
+            resizeMode: {
+              ideal: "none",
+            },
+            facingMode: "user",
+          };
+          const fallbackVideoConstraints = {
+            width: {
+              ideal: cameraSize.width,
+            },
+            height: {
+              ideal: cameraSize.height,
+            },
+            facingMode: "user",
+          };
+
+          try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video: preferredVideoConstraints,
+            });
+          } catch (error) {
+            this.logDebug("tracking:getUserMediaPreferredFailed", {
+              message: error?.message || String(error),
+            });
+            mediaStream = await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video: fallbackVideoConstraints,
+            });
+          }
           videoElement.srcObject = mediaStream;
           await videoElement.play();
+          const trackSettings =
+            mediaStream?.getVideoTracks?.()[0]?.getSettings?.() || {};
+          this.logDebug("tracking:cameraSettings", {
+            width: trackSettings.width || videoElement.videoWidth || null,
+            height: trackSettings.height || videoElement.videoHeight || null,
+            aspectRatio: trackSettings.aspectRatio || null,
+            resizeMode: trackSettings.resizeMode || "unknown",
+          });
           animationFrameId = window.requestAnimationFrame(tick);
         },
         stop: () => {
@@ -631,6 +662,33 @@ export const useChatStore = defineStore('chat', {
         }
       }
     },
+    resetTrackingForInputResize(videoWidth, videoHeight) {
+      if (!videoWidth || !videoHeight) {
+        return;
+      }
+
+      this.syncTrackingPreviewAspectRatio(videoWidth, videoHeight);
+      this.lastHolisticVideoTime = -1;
+      this.holisticFrameInFlight = false;
+      this.holisticEmptyFaceFrames = 0;
+      this.holisticTrackingLogged = false;
+      this.syncMotionStatus(0, 0, true);
+
+      const { primaryCanvas, debugCanvas } = this.getTrackingPreviewElements();
+      [primaryCanvas, debugCanvas].forEach((canvasElement) => {
+        if (!canvasElement) {
+          return;
+        }
+
+        const canvasCtx = canvasElement.getContext("2d");
+        canvasCtx?.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      });
+
+      this.logDebug("tracking:inputResized", {
+        videoWidth,
+        videoHeight,
+      });
+    },
     setElementDisplay(element, nextDisplay) {
       if (!element || element.style.display === nextDisplay) {
         return;
@@ -671,7 +729,7 @@ export const useChatStore = defineStore('chat', {
       this.setElementDisplay(primaryCanvas, shouldShowGuides ? "block" : "none");
       this.setElementDisplay(
         debugVideo,
-        debugEnabled && !trackingActive ? "block" : "none"
+        debugEnabled ? "block" : "none"
       );
       this.setElementVisibility(debugVideo, "visible");
       this.setElementDisplay(
@@ -772,11 +830,11 @@ export const useChatStore = defineStore('chat', {
           ? { canvas: gpuDelegateCanvas }
           : {}),
         runningMode: "VIDEO",
-        minFaceDetectionConfidence: 0.6,
-        minFacePresenceConfidence: 0.6,
-        minPoseDetectionConfidence: 0.6,
-        minPosePresenceConfidence: 0.6,
-        minHandLandmarksConfidence: 0.6,
+        minFaceDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+        minFacePresenceConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+        minPoseDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+        minPosePresenceConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+        minHandLandmarksConfidence: CHAT_MOTION_MIN_CONFIDENCE,
         outputFaceBlendshapes: false,
         outputPoseSegmentationMasks: false,
       }));
@@ -1407,7 +1465,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         drawTrackingPreviewCanvas(videoElement, visibleGuideCanvas, drawPayload, {
-          drawVideoFrame: visibleGuideCanvas === debugCanvas,
+          drawVideoFrame: false,
           mirror: true,
         });
       };
