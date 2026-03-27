@@ -671,7 +671,7 @@ export const useChatStore = defineStore('chat', {
       this.setElementDisplay(primaryCanvas, shouldShowGuides ? "block" : "none");
       this.setElementDisplay(
         debugVideo,
-        debugEnabled ? "block" : "none"
+        debugEnabled && !trackingActive ? "block" : "none"
       );
       this.setElementVisibility(debugVideo, "visible");
       this.setElementDisplay(
@@ -1407,7 +1407,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         drawTrackingPreviewCanvas(videoElement, visibleGuideCanvas, drawPayload, {
-          drawVideoFrame: false,
+          drawVideoFrame: visibleGuideCanvas === debugCanvas,
           mirror: true,
         });
       };
