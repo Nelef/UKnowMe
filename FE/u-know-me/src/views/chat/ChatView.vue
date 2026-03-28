@@ -5,7 +5,7 @@
       <div ref="stageShell" class="chat-stage-shell">
         <div ref="stageGrid" class="chat-stage" :style="stageGridStyle">
           <div class="video-item video-item-local">
-            <div class="video-stage" id="my-video">
+            <div ref="localVideoStage" class="video-stage" id="my-video">
               <video
                 class="my-real-video"
                 autoplay
@@ -273,6 +273,9 @@ export default {
     },
     floatingMonitorStyle() {
       const style = {};
+      const visualMetrics = this.getFloatingMonitorVisualMetrics(
+        this.floatingMonitorSize.width
+      );
 
       if (
         this.floatingMonitorPosition.x != null &&
@@ -283,6 +286,19 @@ export default {
 
       if (this.floatingMonitorSize.width != null) {
         style.width = `${this.floatingMonitorSize.width}px`;
+      }
+
+      if (visualMetrics) {
+        style["--floating-monitor-padding"] = `${visualMetrics.padding}px`;
+        style["--floating-monitor-radius"] = `${visualMetrics.radius}px`;
+        style["--floating-monitor-border-width"] = `${visualMetrics.borderWidth}px`;
+        style["--floating-monitor-shadow-y"] = `${visualMetrics.shadowYOffset}px`;
+        style["--floating-monitor-shadow-blur"] = `${visualMetrics.shadowBlur}px`;
+        style["--floating-monitor-stage-radius"] = `${visualMetrics.stageRadius}px`;
+        style["--floating-monitor-handle-size"] = `${visualMetrics.handleSize}px`;
+        style["--floating-monitor-handle-offset"] = `${visualMetrics.handleOffset}px`;
+        style["--floating-monitor-handle-radius"] = `${visualMetrics.handleRadius}px`;
+        style["--floating-monitor-handle-line-width"] = `${visualMetrics.handleLineWidth}px`;
       }
 
       return Object.keys(style).length > 0 ? style : null;
@@ -688,76 +704,138 @@ export default {
         candidates.includes("concurrent")
       );
     },
-    getFloatingMonitorFrame(nextWidth = null) {
-      const floatingMonitor = this.$refs.floatingMonitor;
+    getFloatingMonitorArea() {
+      const session = this.$refs.session;
+      const localVideoStage = this.$refs.localVideoStage;
 
-      if (!floatingMonitor) {
+      if (!session || !localVideoStage) {
         return null;
       }
 
-      const styles = window.getComputedStyle(floatingMonitor);
-      const paddingX =
-        parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
-      const paddingY =
-        parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
-      const panelWidth =
-        nextWidth != null
-          ? nextWidth
-          : this.floatingMonitorSize.width ||
-            floatingMonitor.offsetWidth ||
-            (window.innerWidth <= 760 ? 220 : 320);
-      const previewWidth = Math.max(panelWidth - paddingX, 0);
+      const sessionRect = session.getBoundingClientRect();
+      const stageRect = localVideoStage.getBoundingClientRect();
+      const inset = Math.max(8, Math.min(16, stageRect.width * 0.02));
+
+      return {
+        left: Math.max(0, stageRect.left - sessionRect.left),
+        top: Math.max(0, stageRect.top - sessionRect.top),
+        width: stageRect.width,
+        height: stageRect.height,
+        inset,
+      };
+    },
+    getFloatingMonitorVisualMetrics(panelWidth = null) {
+      const area = this.getFloatingMonitorArea();
+      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+      const areaWidth =
+        area?.width || (typeof window !== "undefined" ? window.innerWidth * 0.6 : 720);
+      const minWidth = areaWidth / 5;
+      const maxWidth = areaWidth / 3;
+      const fallbackWidth = Math.min(
+        maxWidth,
+        Math.max(minWidth, areaWidth * 0.28)
+      );
+      const resolvedWidth =
+        panelWidth != null
+          ? panelWidth
+          : this.floatingMonitorSize.width != null
+            ? this.floatingMonitorSize.width
+            : fallbackWidth;
+      const padding = clamp(resolvedWidth * 0.045, 5, 14);
+      const radius = clamp(resolvedWidth * 0.09, 12, 26);
+      const borderWidth = clamp(resolvedWidth * 0.006, 0.8, 2.2);
+      const shadowYOffset = clamp(resolvedWidth * 0.05, 8, 22);
+      const shadowBlur = clamp(resolvedWidth * 0.1, 16, 44);
+      const stageRadius = Math.max(10, radius - padding * 0.25);
+      const handleSize = clamp(resolvedWidth * 0.11, 16, 32);
+      const handleOffset = clamp(resolvedWidth * 0.02, 4, 10);
+      const handleRadius = clamp(handleSize * 0.35, 6, 12);
+      const handleLineWidth = clamp(resolvedWidth * 0.01, 1.2, 3.2);
+
+      return {
+        minWidth,
+        maxWidth,
+        resolvedWidth,
+        padding,
+        paddingX: padding * 2,
+        paddingY: padding * 2,
+        radius,
+        borderWidth,
+        shadowYOffset,
+        shadowBlur,
+        stageRadius,
+        handleSize,
+        handleOffset,
+        handleRadius,
+        handleLineWidth,
+      };
+    },
+    getFloatingMonitorFrame(nextWidth = null) {
+      const floatingMonitor = this.$refs.floatingMonitor;
+      const visualMetrics = this.getFloatingMonitorVisualMetrics(nextWidth);
+
+      if (!floatingMonitor || !visualMetrics) {
+        return null;
+      }
+
+      const panelWidth = visualMetrics.resolvedWidth;
+      const previewWidth = Math.max(panelWidth - visualMetrics.paddingX, 0);
 
       return {
         panelWidth,
-        panelHeight: previewWidth * 0.75 + paddingY,
-        paddingX,
-        paddingY,
+        panelHeight: previewWidth * 0.75 + visualMetrics.paddingY,
+        ...visualMetrics,
       };
     },
     getFloatingMonitorBounds(size = {}) {
-      const session = this.$refs.session;
+      const area = this.getFloatingMonitorArea();
       const frame = this.getFloatingMonitorFrame(size.width);
 
-      if (!session || !frame) {
+      if (!area || !frame) {
         return null;
       }
 
-      const inset = window.innerWidth <= 760 ? 12 : 16;
-      const maxX = Math.max(inset, session.clientWidth - frame.panelWidth - inset);
-      const maxY = Math.max(inset, session.clientHeight - frame.panelHeight - inset);
+      const minX = area.left + area.inset;
+      const minY = area.top + area.inset;
+      const maxX = Math.max(
+        minX,
+        area.left + area.width - frame.panelWidth - area.inset
+      );
+      const maxY = Math.max(
+        minY,
+        area.top + area.height - frame.panelHeight - area.inset
+      );
 
       return {
-        inset,
+        minX,
+        minY,
         maxX,
         maxY,
       };
     },
     getFloatingMonitorWidthBounds(position = this.floatingMonitorPosition) {
-      const session = this.$refs.session;
+      const area = this.getFloatingMonitorArea();
       const frame = this.getFloatingMonitorFrame();
 
-      if (!session || !frame) {
+      if (!area || !frame) {
         return null;
       }
 
-      const inset = window.innerWidth <= 760 ? 12 : 16;
       const resolvedPosition = {
-        x: position?.x != null ? position.x : inset,
-        y: position?.y != null ? position.y : inset,
+        x: position?.x != null ? position.x : area.left + area.inset,
+        y: position?.y != null ? position.y : area.top + area.inset,
       };
-      const minWidth = window.innerWidth <= 760 ? 200 : 240;
-      const viewportCap = Math.max(
-        0,
-        Math.min(window.innerWidth * 0.5 - inset, session.clientWidth - inset * 2)
-      );
-      const availableWidth = session.clientWidth - resolvedPosition.x - inset;
-      const availableHeight = session.clientHeight - resolvedPosition.y - inset;
+      const minWidth = area.width / 5;
+      const maxWidthTarget = area.width / 3;
+      const availableWidth =
+        area.left + area.width - area.inset - resolvedPosition.x;
+      const availableHeight =
+        area.top + area.height - area.inset - resolvedPosition.y;
       const maxWidthByHeight =
         ((Math.max(availableHeight - frame.paddingY, 0) * 4) / 3) + frame.paddingX;
       const maxWidth = Math.max(
         0,
-        Math.min(viewportCap, availableWidth, maxWidthByHeight)
+        Math.min(maxWidthTarget, availableWidth, maxWidthByHeight)
       );
 
       return {
@@ -780,8 +858,8 @@ export default {
       }
 
       return {
-        x: Math.min(Math.max(nextX, bounds.inset), bounds.maxX),
-        y: Math.min(Math.max(nextY, bounds.inset), bounds.maxY),
+        x: Math.min(Math.max(nextX, bounds.minX), bounds.maxX),
+        y: Math.min(Math.max(nextY, bounds.minY), bounds.maxY),
       };
     },
     syncFloatingMonitorPosition() {
@@ -790,14 +868,16 @@ export default {
       }
 
       const floatingMonitor = this.$refs.floatingMonitor;
-      if (!floatingMonitor) {
+      const area = this.getFloatingMonitorArea();
+      if (!floatingMonitor || !area) {
         return;
       }
 
       const currentWidth =
         this.floatingMonitorSize.width ||
+        this.getFloatingMonitorVisualMetrics().resolvedWidth ||
         floatingMonitor.offsetWidth ||
-        (window.innerWidth <= 760 ? 220 : 320);
+        area.width / 3;
       const hasExistingPosition =
         this.floatingMonitorPosition.x != null &&
         this.floatingMonitorPosition.y != null;
@@ -817,14 +897,13 @@ export default {
         return;
       }
 
-      const defaultY = window.innerWidth <= 760 ? bounds.inset : 24;
       const nextPosition = hasExistingPosition
         ? this.clampFloatingMonitorPosition(
             this.floatingMonitorPosition.x,
             this.floatingMonitorPosition.y,
             { width: nextWidth }
           )
-        : this.clampFloatingMonitorPosition(bounds.maxX, defaultY, {
+        : this.clampFloatingMonitorPosition(bounds.maxX, bounds.maxY, {
             width: nextWidth,
           });
 
@@ -1176,14 +1255,16 @@ h1 {
   top: 0;
   left: 0;
   z-index: 10;
-  width: clamp(280px, 28vw, 420px);
-  max-width: min(calc(50vw - 20px), calc(100vw - 24px));
-  padding: 14px;
-  border-radius: 26px;
+  width: 240px;
+  max-width: 100%;
+  padding: var(--floating-monitor-padding, 10px);
+  border-radius: var(--floating-monitor-radius, 20px);
   background: rgba(255, 255, 255, 0.9);
   box-shadow:
-    0 22px 44px rgba(123, 132, 165, 0.22),
-    inset 0 0 0 1px rgba(140, 150, 186, 0.18);
+    0 var(--floating-monitor-shadow-y, 14px)
+      var(--floating-monitor-shadow-blur, 28px) rgba(123, 132, 165, 0.22),
+    inset 0 0 0 var(--floating-monitor-border-width, 1px)
+      rgba(140, 150, 186, 0.18);
   backdrop-filter: blur(16px);
   overflow: hidden;
   touch-action: none;
@@ -1206,26 +1287,45 @@ h1 {
 
 .chat-floating-monitor-stage .tracking-preview {
   aspect-ratio: 4 / 3;
-  border-radius: 22px;
+  border-radius: var(--floating-monitor-stage-radius, 16px);
+  box-shadow: inset 0 0 0 var(--floating-monitor-border-width, 1px)
+    rgba(140, 150, 186, 0.18);
 }
 
 .chat-floating-monitor-resize {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: var(--floating-monitor-handle-offset, 6px);
+  bottom: var(--floating-monitor-handle-offset, 6px);
   z-index: 4;
-  width: 30px;
-  height: 30px;
+  width: var(--floating-monitor-handle-size, 24px);
+  height: var(--floating-monitor-handle-size, 24px);
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--floating-monitor-handle-radius, 8px);
   padding: 0;
   background:
-    linear-gradient(135deg, transparent 52%, rgba(59, 84, 124, 0.28) 52%, rgba(59, 84, 124, 0.28) 62%, transparent 62%),
-    linear-gradient(135deg, transparent 64%, rgba(59, 84, 124, 0.52) 64%, rgba(59, 84, 124, 0.52) 74%, transparent 74%),
+    linear-gradient(
+      135deg,
+      transparent calc(52% - var(--floating-monitor-handle-line-width, 2px)),
+      rgba(59, 84, 124, 0.28)
+        calc(52% - var(--floating-monitor-handle-line-width, 2px)),
+      rgba(59, 84, 124, 0.28)
+        calc(52% + var(--floating-monitor-handle-line-width, 2px)),
+      transparent calc(52% + var(--floating-monitor-handle-line-width, 2px))
+    ),
+    linear-gradient(
+      135deg,
+      transparent calc(68% - var(--floating-monitor-handle-line-width, 2px)),
+      rgba(59, 84, 124, 0.52)
+        calc(68% - var(--floating-monitor-handle-line-width, 2px)),
+      rgba(59, 84, 124, 0.52)
+        calc(68% + var(--floating-monitor-handle-line-width, 2px)),
+      transparent calc(68% + var(--floating-monitor-handle-line-width, 2px))
+    ),
     rgba(255, 255, 255, 0.88);
   box-shadow:
     0 10px 20px rgba(92, 104, 138, 0.18),
-    inset 0 0 0 1px rgba(140, 150, 186, 0.18);
+    inset 0 0 0 var(--floating-monitor-border-width, 1px)
+      rgba(140, 150, 186, 0.18);
   cursor: nwse-resize;
   touch-action: none;
 }
@@ -1234,10 +1334,6 @@ h1 {
   .chat-stage-shell {
     padding: 16px 16px 0;
     gap: 14px;
-  }
-
-  .chat-floating-monitor {
-    max-width: min(calc(50vw - 18px), calc(100vw - 32px));
   }
 }
 
@@ -1259,18 +1355,5 @@ h1 {
     min-height: 0;
   }
 
-  .chat-floating-monitor {
-    max-width: min(calc(50vw - 14px), calc(100vw - 24px));
-    padding: 10px;
-    border-radius: 22px;
-  }
-
-  .chat-floating-monitor-resize {
-    right: 6px;
-    bottom: 6px;
-    width: 28px;
-    height: 28px;
-    border-radius: 10px;
-  }
 }
 </style>
