@@ -5,7 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta
       name="viewport"
-      content="width=device-width,initial-scale=1,viewport-fit=cover"
+      content="width=device-width,initial-scale=0.8,minimum-scale=0.8,maximum-scale=0.8,user-scalable=no,viewport-fit=cover"
     >
     <link rel="stylesheet" href="https://use.fontawesome.com/releases/v6.1.1/css/all.css" integrity="sha384-/frq1SRXYH/bSyou/HUp/hib7RVN1TawQYja658FEOodR/FQBKVqT9Ol+Oz3Olq5" crossorigin="anonymous">
     <link rel="icon" href="<%= BASE_URL %>favicon.ico">
@@ -31,6 +31,15 @@
     <script>
       (function () {
         let lastTouchEndAt = 0;
+        const zoomShortcutKeys = new Set(["+", "=", "-", "_", "0"]);
+        const zoomShortcutCodes = new Set([
+          "Equal",
+          "Minus",
+          "Digit0",
+          "NumpadAdd",
+          "NumpadSubtract",
+          "Numpad0",
+        ]);
 
         const preventIfMultiTouch = function (event) {
           if (event.touches && event.touches.length > 1) {
@@ -40,6 +49,24 @@
 
         const preventGestureZoom = function (event) {
           event.preventDefault();
+        };
+
+        const preventBrowserZoom = function (event) {
+          if (!(event.ctrlKey || event.metaKey)) {
+            return;
+          }
+
+          if (event.type === "wheel") {
+            event.preventDefault();
+            return;
+          }
+
+          if (
+            event.type === "keydown" &&
+            (zoomShortcutKeys.has(event.key) || zoomShortcutCodes.has(event.code))
+          ) {
+            event.preventDefault();
+          }
         };
 
         document.addEventListener("gesturestart", preventGestureZoom, {
@@ -74,6 +101,10 @@
           },
           { passive: false }
         );
+        document.addEventListener("wheel", preventBrowserZoom, {
+          passive: false,
+        });
+        document.addEventListener("keydown", preventBrowserZoom);
       })();
     </script>
     <!-- built files will be auto injected -->

@@ -1,21 +1,9 @@
 <template>
   <HeartRain v-if="chat.heartRainFlag" />
   <div class="chat-body" id="main-container">
-    <div id="session">
-      <div class="chat-stage-shell">
-        <div class="chat-stage-header" :style="{ maxWidth: stageMaxWidth }">
-          <div class="chat-stage-copy">
-            <div class="chat-stage-kicker">{{ stageKicker }}</div>
-            <div class="chat-stage-title">{{ stageTitle }}</div>
-            <p class="chat-stage-description">{{ stageDescription }}</p>
-          </div>
-          <div class="chat-stage-meta">
-            <div class="chat-stage-pill">{{ stageSummaryText }}</div>
-            <div class="chat-stage-pill">{{ stageModeText }}</div>
-          </div>
-        </div>
-
-        <div class="chat-stage" :style="stageGridStyle">
+    <div id="session" ref="session">
+      <div ref="stageShell" class="chat-stage-shell">
+        <div ref="stageGrid" class="chat-stage" :style="stageGridStyle">
           <div class="video-item video-item-local">
             <div class="video-stage" id="my-video">
               <video
@@ -60,7 +48,6 @@
               </div>
             </div>
             <div class="video-card-footer">
-              <div class="video-card-status">{{ stageSummaryText }}</div>
               <p class="nickName">{{ account.currentUser.nickname }}</p>
             </div>
           </div>
@@ -78,19 +65,13 @@
         v-show="showMonitorPanel"
         ref="floatingMonitor"
         class="chat-floating-monitor"
-        :class="{ 'is-dragging': Boolean(floatingMonitorDragState) }"
+        :class="{
+          'is-dragging': Boolean(floatingMonitorDragState),
+          'is-resizing': Boolean(floatingMonitorResizeState),
+        }"
         :style="floatingMonitorStyle"
+        @pointerdown="startFloatingMonitorDrag"
       >
-        <div
-          class="chat-floating-monitor-head"
-          @pointerdown="startFloatingMonitorDrag"
-        >
-          <div class="chat-floating-monitor-title">내 카메라</div>
-          <div class="chat-floating-monitor-subtitle">
-            {{ floatingMonitorText }}
-          </div>
-        </div>
-
         <div
           class="tracking-preview-shell tracking-preview-debug chat-floating-monitor-stage"
           :class="{ 'tracking-preview-solo': chat.soloMode }"
@@ -107,21 +88,14 @@
               class="tracking-debug-canvas"
               style="display: none"
             ></canvas>
-            <button
-              type="button"
-              class="tracking-preview-label"
-              @click.stop="toggleMotionDelegate"
-            >
-              {{ trackingPreviewLabel }}
-            </button>
-          </div>
-          <div
-            class="motion-status"
-            :class="{ active: chat.motionFaceCount > 0 || chat.motionPoseCount > 0 }"
-          >
-            {{ motionStatusText }}
           </div>
         </div>
+        <button
+          type="button"
+          class="chat-floating-monitor-resize"
+          aria-label="플로팅 패널 크기 조절"
+          @pointerdown.stop.prevent="startFloatingMonitorResize"
+        ></button>
       </div>
     </div>
     <chat-sub />
@@ -177,164 +151,150 @@ export default {
     };
   },
   updated() {
-    this.ensureFloatingMonitorObserver();
     this.syncFloatingMonitorPosition();
   },
   computed: {
-    motionStatusText() {
-      if (!this.chat.motionCheck) {
-        return "모션 인식 꺼짐";
-      }
-
-      if (this.chat.motionFaceCount > 0 || this.chat.motionPoseCount > 0) {
-        return `얼굴 ${this.chat.motionFaceCount} · 자세 ${this.chat.motionPoseCount}`;
-      }
-
-      return "대상을 인식하는 중";
-    },
     participantCount() {
       return this.remoteParticipants.length + 1;
     },
     stageLayout() {
-      if (this.participantCount === 1) {
-        return {
-          maxWidth:
-            "min(1320px, calc(100vw - 56px), calc((100dvh - var(--chat-sub-size) - 130px) * 4 / 3))",
-          minCardWidth: 720,
-        };
+      const layoutMetrics = this.getStageViewportMetrics();
+      const participantCount = this.participantCount + this.layoutRevision * 0;
+      const maxColumns = Math.min(4, participantCount);
+      let bestLayout = null;
+
+      for (let columns = 1; columns <= maxColumns; columns += 1) {
+        const rows = Math.ceil(participantCount / columns);
+        const widthBudget =
+          layoutMetrics.availableWidth - layoutMetrics.gridGap * (columns - 1);
+        const heightBudget =
+          layoutMetrics.availableHeight - layoutMetrics.gridGap * (rows - 1);
+
+        if (widthBudget <= 0 || heightBudget <= 0) {
+          continue;
+        }
+
+        const maxCardWidthByWidth = widthBudget / columns;
+        const maxVideoHeightByHeight =
+          heightBudget / rows - layoutMetrics.cardChromeHeight;
+
+        if (maxVideoHeightByHeight <= 0) {
+          continue;
+        }
+
+        const cardWidth = Math.floor(
+          Math.min(maxCardWidthByWidth, (maxVideoHeightByHeight * 4) / 3)
+        );
+
+        if (cardWidth <= 0) {
+          continue;
+        }
+
+        const gridWidth = Math.floor(
+          columns * cardWidth + layoutMetrics.gridGap * (columns - 1)
+        );
+        const gridHeight = Math.floor(
+          rows * (cardWidth * 0.75 + layoutMetrics.cardChromeHeight) +
+            layoutMetrics.gridGap * (rows - 1)
+        );
+
+        if (
+          gridWidth > layoutMetrics.availableWidth + 1 ||
+          gridHeight > layoutMetrics.availableHeight + 1
+        ) {
+          continue;
+        }
+
+        if (
+          !bestLayout ||
+          cardWidth > bestLayout.cardWidth ||
+          (cardWidth === bestLayout.cardWidth && columns < bestLayout.columns)
+        ) {
+          bestLayout = {
+            columns,
+            rows,
+            cardWidth,
+            gridWidth,
+            gridHeight,
+          };
+        }
       }
 
-      const columnCount = Math.min(4, Math.ceil(Math.sqrt(this.participantCount)));
-      const targetCardWidth =
-        columnCount === 2 ? 520 : columnCount === 3 ? 360 : 300;
-      const minCardWidth =
-        columnCount === 2 ? 400 : columnCount === 3 ? 320 : 260;
-      const maxWidth = columnCount * targetCardWidth + (columnCount - 1) * 24;
+      if (bestLayout) {
+        return bestLayout;
+      }
+
+      const fallbackColumns = maxColumns;
+      const fallbackRows = Math.ceil(participantCount / fallbackColumns);
+      const fallbackWidthByWidth = Math.floor(
+        (layoutMetrics.availableWidth -
+          layoutMetrics.gridGap * (fallbackColumns - 1)) /
+          fallbackColumns
+      );
+      const fallbackWidthByHeight = Math.floor(
+        (((layoutMetrics.availableHeight -
+          layoutMetrics.gridGap * (fallbackRows - 1)) /
+          fallbackRows -
+          layoutMetrics.cardChromeHeight) *
+          4) /
+          3
+      );
+      const fallbackWidth = Math.max(
+        80,
+        Math.min(fallbackWidthByWidth, fallbackWidthByHeight)
+      );
 
       return {
-        maxWidth: `min(calc(100vw - 32px), ${maxWidth}px)`,
-        minCardWidth,
+        columns: fallbackColumns,
+        rows: fallbackRows,
+        cardWidth: fallbackWidth,
+        gridWidth: Math.floor(
+          fallbackColumns * fallbackWidth +
+            layoutMetrics.gridGap * (fallbackColumns - 1)
+        ),
+        gridHeight: Math.floor(
+          fallbackRows * (fallbackWidth * 0.75 + layoutMetrics.cardChromeHeight) +
+            layoutMetrics.gridGap * (fallbackRows - 1)
+        ),
       };
     },
     stageMaxWidth() {
-      return this.stageLayout.maxWidth;
+      return `${this.stageLayout.gridWidth}px`;
     },
     stageGridStyle() {
       return {
-        maxWidth: this.stageMaxWidth,
-        gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${this.stageLayout.minCardWidth}px), 1fr))`,
+        width: this.stageMaxWidth,
+        maxWidth: "100%",
+        gridTemplateColumns: `repeat(${this.stageLayout.columns}, minmax(0, 1fr))`,
       };
-    },
-    stageKicker() {
-      return "채팅";
-    },
-    stageTitle() {
-      if (this.chat.loading === 1) {
-        return "입장 준비 중";
-      }
-
-      if (this.participantCount === 1) {
-        return this.chat.soloMode
-          ? "테스트 세션"
-          : "상대 연결 대기 중";
-      }
-
-      return "영상 채팅 진행 중";
-    },
-    stageDescription() {
-      if (this.chat.loading === 1) {
-        return "카메라와 아바타를 초기화하고 있습니다.";
-      }
-
-      if (this.participantCount === 1) {
-        return this.chat.soloMode
-          ? "카메라 입력과 아바타 움직임을 확인할 수 있습니다."
-          : "상대가 입장하면 화면이 자동으로 정렬됩니다.";
-      }
-
-      return `${this.participantCount}명이 연결되어 있으며, 모든 화면은 4:3 비율을 유지합니다.`;
-    },
-    stageModeText() {
-      return this.chat.motionCheck ? "모션 인식 켜짐" : "모션 인식 꺼짐";
-    },
-    stageSummaryText() {
-      if (this.chat.soloMode) {
-        return "테스트";
-      }
-
-      if (this.remoteParticipants.length === 0) {
-        return "연결 대기 중";
-      }
-
-      return `${this.participantCount}명 연결`;
     },
     showMonitorPanel() {
       return this.chat.loading === 1 || Boolean(this.chat.camera);
     },
-    floatingMonitorText() {
-      if (this.chat.loading === 1) {
-        return "카메라 준비 중";
-      }
-
-      return this.chat.motionCheck ? "실시간 입력 확인" : "미리보기";
-    },
     floatingMonitorStyle() {
+      const style = {};
+
       if (
-        this.floatingMonitorPosition.x == null ||
-        this.floatingMonitorPosition.y == null
+        this.floatingMonitorPosition.x != null &&
+        this.floatingMonitorPosition.y != null
       ) {
-        return null;
+        style.transform = `translate(${this.floatingMonitorPosition.x}px, ${this.floatingMonitorPosition.y}px)`;
       }
 
-      return {
-        transform: `translate(${this.floatingMonitorPosition.x}px, ${this.floatingMonitorPosition.y}px)`,
-      };
-    },
-    trackingPreviewLabel() {
-      const forcedDelegate =
-        typeof window !== "undefined"
-          ? window.localStorage.getItem("ukm-motion-delegate")
-          : null;
-      const activeDelegate = this.chat.holisticDelegate || "CPU";
-      const delegateStatus = this.chat.holisticDelegateStatus;
-
-      if (delegateStatus === "worker-cpu-active") {
-        return "처리 모드: 워커";
+      if (this.floatingMonitorSize.width != null) {
+        style.width = `${this.floatingMonitorSize.width}px`;
       }
 
-      if (delegateStatus === "worker-fallback-main") {
-        return "처리 모드: CPU";
-      }
-
-      if (activeDelegate === "GPU") {
-        return "처리 모드: GPU";
-      }
-
-      if (forcedDelegate === "GPU") {
-        if (delegateStatus === "gpu-precheck-failed") {
-          return "처리 모드: 호환";
-        }
-
-        if (delegateStatus === "gpu-init-failed") {
-          return "처리 모드: 호환";
-        }
-
-        if (delegateStatus === "gpu-tracking-fallback") {
-          return "처리 모드: 호환";
-        }
-
-        return "처리 모드: 호환";
-      }
-
-      if (forcedDelegate === "CPU") {
-        return "처리 모드: CPU";
-      }
-
-      return "처리 모드: 자동";
+      return Object.keys(style).length > 0 ? style : null;
     },
   },
 
   data() {
+    const viewportWidth =
+      typeof window !== "undefined" ? window.innerWidth : 1280;
+    const viewportHeight =
+      typeof window !== "undefined" ? window.innerHeight : 720;
+
     return {
       mySessionId: "",
       myUserName: "",
@@ -345,9 +305,16 @@ export default {
       remoteParticipants: [],
       remoteParticipantSignature: "",
       floatingMonitorPosition: { x: null, y: null },
+      floatingMonitorSize: { width: null },
       floatingMonitorDragState: null,
+      floatingMonitorResizeState: null,
       floatingMonitorResizeHandler: null,
-      floatingMonitorResizeObserver: null,
+      layoutObserver: null,
+      layoutRevision: 0,
+      layoutViewport: {
+        width: viewportWidth,
+        height: viewportHeight,
+      },
     };
   },
   mounted() {
@@ -362,11 +329,29 @@ export default {
     };
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
     this.floatingMonitorResizeHandler = () => {
+      this.layoutViewport = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
+      this.layoutRevision += 1;
       this.syncFloatingMonitorPosition();
     };
     window.addEventListener("resize", this.floatingMonitorResizeHandler);
     nextTick(() => {
-      this.ensureFloatingMonitorObserver();
+      if (typeof window !== "undefined" && "ResizeObserver" in window) {
+        this.layoutObserver = new window.ResizeObserver(() => {
+          this.layoutRevision += 1;
+          this.syncFloatingMonitorPosition();
+        });
+
+        [this.$refs.session, this.$refs.stageShell, this.$refs.stageHeader]
+          .filter(Boolean)
+          .forEach((target) => {
+            this.layoutObserver.observe(target);
+          });
+      }
+
+      this.layoutRevision += 1;
       this.syncFloatingMonitorPosition();
     });
     this.joinSession();
@@ -390,18 +375,66 @@ export default {
     if (this.floatingMonitorResizeHandler) {
       window.removeEventListener("resize", this.floatingMonitorResizeHandler);
     }
-    if (this.floatingMonitorResizeObserver) {
-      this.floatingMonitorResizeObserver.disconnect();
-      this.floatingMonitorResizeObserver = null;
+    if (this.layoutObserver) {
+      this.layoutObserver.disconnect();
+      this.layoutObserver = null;
     }
     window.removeEventListener("pointermove", this.onFloatingMonitorDrag);
     window.removeEventListener("pointerup", this.stopFloatingMonitorDrag);
     window.removeEventListener("pointercancel", this.stopFloatingMonitorDrag);
+    window.removeEventListener("pointermove", this.onFloatingMonitorResize);
+    window.removeEventListener("pointerup", this.stopFloatingMonitorResize);
+    window.removeEventListener(
+      "pointercancel",
+      this.stopFloatingMonitorResize
+    );
   },
   beforeRouteLeave(to, from, next) {
     this.chat.leaveSession({ navigate: false }).finally(() => next());
   },
   methods: {
+    getStageViewportMetrics() {
+      const shell = this.$refs.stageShell;
+      const header = this.$refs.stageHeader;
+      const stage = this.$refs.stageGrid;
+      const viewportWidth = this.layoutViewport.width || window.innerWidth;
+      const viewportHeight = this.layoutViewport.height || window.innerHeight;
+      const fallbackPadding = viewportWidth <= 760 ? 24 : viewportWidth <= 1120 ? 32 : 40;
+      const fallbackGap = viewportWidth <= 760 ? 12 : viewportWidth <= 1120 ? 14 : 18;
+      const shellStyles = shell ? window.getComputedStyle(shell) : null;
+      const shellPaddingX = shellStyles
+        ? parseFloat(shellStyles.paddingLeft) + parseFloat(shellStyles.paddingRight)
+        : fallbackPadding;
+      const shellPaddingY = shellStyles
+        ? parseFloat(shellStyles.paddingTop) + parseFloat(shellStyles.paddingBottom)
+        : fallbackPadding / 2;
+      const shellGap = shellStyles ? parseFloat(shellStyles.gap) || fallbackGap : fallbackGap;
+      const stageGap = stage
+        ? parseFloat(window.getComputedStyle(stage).gap) || fallbackGap
+        : fallbackGap;
+      const headerHeight = header ? header.offsetHeight : 0;
+      const headerGap = header ? shellGap : 0;
+      const footerHeight = 32;
+      const cardChromeHeight = footerHeight + 12;
+      const availableWidth = Math.max(
+        220,
+        (shell?.clientWidth || viewportWidth) - shellPaddingX
+      );
+      const availableHeight = Math.max(
+        180,
+        (shell?.clientHeight || viewportHeight) -
+          shellPaddingY -
+          headerHeight -
+          headerGap
+      );
+
+      return {
+        availableWidth,
+        availableHeight,
+        gridGap: stageGap,
+        cardChromeHeight,
+      };
+    },
     async joinSession() {
       try {
         this.chat.refreshTrackingDebugPreviewFlag();
@@ -655,47 +688,93 @@ export default {
         candidates.includes("concurrent")
       );
     },
-    ensureFloatingMonitorObserver() {
-      if (typeof ResizeObserver === "undefined") {
-        return;
-      }
-
+    getFloatingMonitorFrame(nextWidth = null) {
       const floatingMonitor = this.$refs.floatingMonitor;
+
       if (!floatingMonitor) {
-        return;
-      }
-
-      if (this.floatingMonitorResizeObserver) {
-        this.floatingMonitorResizeObserver.disconnect();
-      }
-
-      this.floatingMonitorResizeObserver = new ResizeObserver(() => {
-        this.syncFloatingMonitorPosition();
-      });
-      this.floatingMonitorResizeObserver.observe(floatingMonitor);
-    },
-    getFloatingMonitorBounds() {
-      const session = document.getElementById("session");
-      const floatingMonitor = this.$refs.floatingMonitor;
-
-      if (!session || !floatingMonitor) {
         return null;
       }
 
-      const panelWidth = floatingMonitor.offsetWidth;
-      const panelHeight = floatingMonitor.offsetHeight;
-      const inset = window.innerWidth <= 760 ? 12 : 16;
-      const maxX = Math.max(inset, session.clientWidth - panelWidth - inset);
-      const maxY = Math.max(inset, session.clientHeight - panelHeight - inset);
+      const styles = window.getComputedStyle(floatingMonitor);
+      const paddingX =
+        parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+      const paddingY =
+        parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
+      const panelWidth =
+        nextWidth != null
+          ? nextWidth
+          : this.floatingMonitorSize.width ||
+            floatingMonitor.offsetWidth ||
+            (window.innerWidth <= 760 ? 220 : 320);
+      const previewWidth = Math.max(panelWidth - paddingX, 0);
 
       return {
-        maxX,
-        maxY,
-        inset,
+        panelWidth,
+        panelHeight: previewWidth * 0.75 + paddingY,
+        paddingX,
+        paddingY,
       };
     },
-    clampFloatingMonitorPosition(nextX, nextY) {
-      const bounds = this.getFloatingMonitorBounds();
+    getFloatingMonitorBounds(size = {}) {
+      const session = this.$refs.session;
+      const frame = this.getFloatingMonitorFrame(size.width);
+
+      if (!session || !frame) {
+        return null;
+      }
+
+      const inset = window.innerWidth <= 760 ? 12 : 16;
+      const maxX = Math.max(inset, session.clientWidth - frame.panelWidth - inset);
+      const maxY = Math.max(inset, session.clientHeight - frame.panelHeight - inset);
+
+      return {
+        inset,
+        maxX,
+        maxY,
+      };
+    },
+    getFloatingMonitorWidthBounds(position = this.floatingMonitorPosition) {
+      const session = this.$refs.session;
+      const frame = this.getFloatingMonitorFrame();
+
+      if (!session || !frame) {
+        return null;
+      }
+
+      const inset = window.innerWidth <= 760 ? 12 : 16;
+      const resolvedPosition = {
+        x: position?.x != null ? position.x : inset,
+        y: position?.y != null ? position.y : inset,
+      };
+      const minWidth = window.innerWidth <= 760 ? 200 : 240;
+      const viewportCap = Math.max(
+        0,
+        Math.min(window.innerWidth * 0.5 - inset, session.clientWidth - inset * 2)
+      );
+      const availableWidth = session.clientWidth - resolvedPosition.x - inset;
+      const availableHeight = session.clientHeight - resolvedPosition.y - inset;
+      const maxWidthByHeight =
+        ((Math.max(availableHeight - frame.paddingY, 0) * 4) / 3) + frame.paddingX;
+      const maxWidth = Math.max(
+        0,
+        Math.min(viewportCap, availableWidth, maxWidthByHeight)
+      );
+
+      return {
+        minWidth: Math.min(minWidth, maxWidth),
+        maxWidth,
+      };
+    },
+    clampFloatingMonitorWidth(nextWidth, position = this.floatingMonitorPosition) {
+      const bounds = this.getFloatingMonitorWidthBounds(position);
+      if (!bounds) {
+        return nextWidth;
+      }
+
+      return Math.min(Math.max(nextWidth, bounds.minWidth), bounds.maxWidth);
+    },
+    clampFloatingMonitorPosition(nextX, nextY, size = {}) {
+      const bounds = this.getFloatingMonitorBounds(size);
       if (!bounds) {
         return null;
       }
@@ -710,34 +789,63 @@ export default {
         return;
       }
 
-      const bounds = this.getFloatingMonitorBounds();
+      const floatingMonitor = this.$refs.floatingMonitor;
+      if (!floatingMonitor) {
+        return;
+      }
+
+      const currentWidth =
+        this.floatingMonitorSize.width ||
+        floatingMonitor.offsetWidth ||
+        (window.innerWidth <= 760 ? 220 : 320);
+      const hasExistingPosition =
+        this.floatingMonitorPosition.x != null &&
+        this.floatingMonitorPosition.y != null;
+      const provisionalPosition = hasExistingPosition
+        ? this.clampFloatingMonitorPosition(
+            this.floatingMonitorPosition.x,
+            this.floatingMonitorPosition.y,
+            { width: currentWidth }
+          )
+        : null;
+      const nextWidth = this.clampFloatingMonitorWidth(
+        currentWidth,
+        provisionalPosition || this.floatingMonitorPosition
+      );
+      const bounds = this.getFloatingMonitorBounds({ width: nextWidth });
       if (!bounds) {
         return;
       }
 
-      const hasExistingPosition =
-        this.floatingMonitorPosition.x != null &&
-        this.floatingMonitorPosition.y != null;
-      const fallbackY = window.innerWidth <= 1120 ? bounds.inset + 8 : 24;
+      const defaultY = window.innerWidth <= 760 ? bounds.inset : 24;
       const nextPosition = hasExistingPosition
         ? this.clampFloatingMonitorPosition(
             this.floatingMonitorPosition.x,
-            this.floatingMonitorPosition.y
+            this.floatingMonitorPosition.y,
+            { width: nextWidth }
           )
-        : this.clampFloatingMonitorPosition(bounds.maxX, fallbackY);
+        : this.clampFloatingMonitorPosition(bounds.maxX, defaultY, {
+            width: nextWidth,
+          });
 
-      if (
-        !nextPosition ||
-        (this.floatingMonitorPosition.x === nextPosition.x &&
-          this.floatingMonitorPosition.y === nextPosition.y)
-      ) {
-        return;
+      if (this.floatingMonitorSize.width !== nextWidth) {
+        this.floatingMonitorSize.width = nextWidth;
       }
 
-      this.floatingMonitorPosition = nextPosition;
+      if (
+        nextPosition &&
+        (this.floatingMonitorPosition.x !== nextPosition.x ||
+          this.floatingMonitorPosition.y !== nextPosition.y)
+      ) {
+        this.floatingMonitorPosition = nextPosition;
+      }
     },
     startFloatingMonitorDrag(event) {
       if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      if (this.floatingMonitorResizeState) {
         return;
       }
 
@@ -746,6 +854,7 @@ export default {
         return;
       }
 
+      event.preventDefault();
       this.syncFloatingMonitorPosition();
       this.floatingMonitorDragState = {
         pointerId: event.pointerId,
@@ -791,22 +900,79 @@ export default {
       window.removeEventListener("pointerup", this.stopFloatingMonitorDrag);
       window.removeEventListener("pointercancel", this.stopFloatingMonitorDrag);
     },
-    toggleMotionDelegate() {
-      const currentForcedDelegate =
-        window.localStorage.getItem("ukm-motion-delegate");
-
-      if (currentForcedDelegate === "GPU") {
-        window.localStorage.setItem("ukm-motion-delegate", "CPU");
-      } else if (currentForcedDelegate === "CPU") {
-        window.localStorage.removeItem("ukm-motion-delegate");
-      } else {
-        window.localStorage.setItem("ukm-motion-delegate", "GPU");
+    startFloatingMonitorResize(event) {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
       }
-      this.chat
-        .reconfigureHolisticDelegate()
-        .catch((error) =>
-          console.error("모션 delegate 전환 중 오류가 발생했습니다.", error)
-        );
+
+      const floatingMonitor = this.$refs.floatingMonitor;
+      const frame = this.getFloatingMonitorFrame();
+      if (!floatingMonitor || !frame) {
+        return;
+      }
+
+      event.preventDefault();
+      this.syncFloatingMonitorPosition();
+      this.floatingMonitorResizeState = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        baseWidth: this.floatingMonitorSize.width || frame.panelWidth,
+        panelAspectRatio:
+          frame.panelWidth > 0 ? frame.panelHeight / frame.panelWidth : 1,
+        basePosition: {
+          x: this.floatingMonitorPosition.x || 0,
+          y: this.floatingMonitorPosition.y || 0,
+        },
+      };
+
+      floatingMonitor.setPointerCapture?.(event.pointerId);
+      window.addEventListener("pointermove", this.onFloatingMonitorResize);
+      window.addEventListener("pointerup", this.stopFloatingMonitorResize);
+      window.addEventListener("pointercancel", this.stopFloatingMonitorResize);
+    },
+    onFloatingMonitorResize(event) {
+      const resizeState = this.floatingMonitorResizeState;
+      if (!resizeState || resizeState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const deltaX = event.clientX - resizeState.startX;
+      const deltaY = event.clientY - resizeState.startY;
+      const deltaWidth =
+        (deltaX + deltaY * resizeState.panelAspectRatio) /
+        (1 + resizeState.panelAspectRatio * resizeState.panelAspectRatio);
+      const nextWidth = this.clampFloatingMonitorWidth(
+        resizeState.baseWidth + deltaWidth,
+        resizeState.basePosition
+      );
+      const nextPosition = this.clampFloatingMonitorPosition(
+        resizeState.basePosition.x,
+        resizeState.basePosition.y,
+        { width: nextWidth }
+      );
+
+      this.floatingMonitorSize.width = nextWidth;
+      if (nextPosition) {
+        this.floatingMonitorPosition = nextPosition;
+      }
+    },
+    stopFloatingMonitorResize(event) {
+      if (
+        this.floatingMonitorResizeState &&
+        event?.pointerId != null &&
+        this.floatingMonitorResizeState.pointerId !== event.pointerId
+      ) {
+        return;
+      }
+
+      this.floatingMonitorResizeState = null;
+      window.removeEventListener("pointermove", this.onFloatingMonitorResize);
+      window.removeEventListener("pointerup", this.stopFloatingMonitorResize);
+      window.removeEventListener(
+        "pointercancel",
+        this.stopFloatingMonitorResize
+      );
     },
   },
 };
@@ -822,6 +988,11 @@ h1 {
   flex: 1;
   min-height: 0;
   display: flex;
+}
+
+#session {
+  isolation: isolate;
+  overflow: hidden;
 }
 .chat-body {
   display: flex;
@@ -843,81 +1014,23 @@ h1 {
   justify-content: center;
   gap: 18px;
   padding: 20px 20px 0;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .chat-stage-shell,
-.chat-stage-header,
 .chat-stage {
   position: relative;
   z-index: 1;
 }
 
-.chat-stage-header {
-  width: 100%;
-  margin: 0 auto;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.chat-stage-copy {
-  min-width: 0;
-  display: grid;
-  gap: 6px;
-}
-
-.chat-stage-kicker {
-  color: #7a639d;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.chat-stage-title {
-  color: #30214f;
-  font-size: clamp(24px, 2vw, 34px);
-  font-weight: 800;
-  line-height: 1.15;
-}
-
-.chat-stage-description {
-  max-width: 780px;
-  margin: 0;
-  color: #62557d;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.chat-stage-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: flex-end;
-}
-
-.chat-stage-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #4a3e67;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  box-shadow:
-    0 12px 24px rgba(106, 109, 141, 0.12),
-    inset 0 0 0 1px rgba(111, 96, 145, 0.1);
-}
-
 .chat-stage {
+  flex: 1;
   width: 100%;
+  min-height: 0;
   display: grid;
   gap: clamp(14px, 2vw, 24px);
   align-items: start;
+  align-content: center;
   justify-content: center;
   margin: 0 auto;
 }
@@ -983,32 +1096,19 @@ h1 {
 .video-card-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-end;
+  min-height: 0;
   padding: 0 6px;
-}
-
-.video-card-status {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #554471;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  box-shadow: inset 0 0 0 1px rgba(111, 96, 145, 0.1);
-}
-
-.video-item-remote .video-card-status {
-  background: rgba(238, 246, 255, 0.95);
-  color: #476178;
+  flex-shrink: 0;
 }
 
 .nickName {
   margin: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #2f2743;
   font-size: 16px;
   font-weight: 700;
@@ -1070,92 +1170,64 @@ h1 {
   -webkit-transform: none;
   -moz-transform: none;
 }
-.tracking-preview-label {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.88);
-  color: #3f3558;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  border: 0;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 8px 18px rgba(111, 96, 145, 0.16);
-}
 
 .chat-floating-monitor {
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 4;
-  width: clamp(240px, 22vw, 320px);
-  max-width: calc(100vw - 24px);
-  display: grid;
-  gap: 12px;
+  z-index: 10;
+  width: clamp(280px, 28vw, 420px);
+  max-width: min(calc(50vw - 20px), calc(100vw - 24px));
   padding: 14px;
-  border-radius: 24px;
+  border-radius: 26px;
   background: rgba(255, 255, 255, 0.9);
   box-shadow:
     0 22px 44px rgba(123, 132, 165, 0.22),
     inset 0 0 0 1px rgba(140, 150, 186, 0.18);
   backdrop-filter: blur(16px);
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
   will-change: transform;
 }
 
-.chat-floating-monitor-head {
-  display: grid;
-  gap: 4px;
-  cursor: grab;
-  user-select: none;
-  touch-action: none;
-}
-
-.chat-floating-monitor.is-dragging .chat-floating-monitor-head {
+.chat-floating-monitor.is-dragging {
   cursor: grabbing;
 }
 
-.chat-floating-monitor-title {
-  color: #2f2743;
-  font-size: 15px;
-  font-weight: 800;
+.chat-floating-monitor.is-resizing {
+  cursor: nwse-resize;
 }
 
-.chat-floating-monitor-subtitle {
-  color: #6a5d86;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.chat-floating-monitor-stage {
+.chat-floating-monitor-stage,
+.tracking-preview-debug {
   width: 100%;
 }
 
-.motion-status {
-  margin-top: 10px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(246, 249, 255, 0.96);
-  color: #4c4166;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.3;
-  text-align: center;
-  box-shadow: inset 0 0 0 1px rgba(140, 150, 186, 0.14);
-}
-.motion-status.active {
-  background: rgba(231, 243, 255, 0.98);
-  color: #215b84;
+.chat-floating-monitor-stage .tracking-preview {
+  aspect-ratio: 4 / 3;
+  border-radius: 22px;
 }
 
-@media screen and (min-width: 1181px) {
-  .chat-stage-shell {
-    padding-right: clamp(296px, 25vw, 372px);
-  }
+.chat-floating-monitor-resize {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 4;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0;
+  background:
+    linear-gradient(135deg, transparent 52%, rgba(59, 84, 124, 0.28) 52%, rgba(59, 84, 124, 0.28) 62%, transparent 62%),
+    linear-gradient(135deg, transparent 64%, rgba(59, 84, 124, 0.52) 64%, rgba(59, 84, 124, 0.52) 74%, transparent 74%),
+    rgba(255, 255, 255, 0.88);
+  box-shadow:
+    0 10px 20px rgba(92, 104, 138, 0.18),
+    inset 0 0 0 1px rgba(140, 150, 186, 0.18);
+  cursor: nwse-resize;
+  touch-action: none;
 }
 
 @media screen and (max-width: 1120px) {
@@ -1164,17 +1236,8 @@ h1 {
     gap: 14px;
   }
 
-  .chat-stage-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .chat-stage-meta {
-    justify-content: flex-start;
-  }
-
   .chat-floating-monitor {
-    width: min(280px, calc(100vw - 32px));
+    max-width: min(calc(50vw - 18px), calc(100vw - 32px));
   }
 }
 
@@ -1182,14 +1245,6 @@ h1 {
   .chat-stage-shell {
     padding: 12px 12px 0;
     gap: 12px;
-  }
-
-  .chat-stage-title {
-    font-size: 22px;
-  }
-
-  .chat-stage-description {
-    font-size: 13px;
   }
 
   .chat-stage {
@@ -1201,18 +1256,21 @@ h1 {
   }
 
   .video-card-footer {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .nickName {
-    text-align: left;
+    min-height: 0;
   }
 
   .chat-floating-monitor {
-    width: min(230px, calc(100vw - 24px));
-    padding: 12px;
-    border-radius: 20px;
+    max-width: min(calc(50vw - 14px), calc(100vw - 24px));
+    padding: 10px;
+    border-radius: 22px;
+  }
+
+  .chat-floating-monitor-resize {
+    right: 6px;
+    bottom: 6px;
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
   }
 }
 </style>

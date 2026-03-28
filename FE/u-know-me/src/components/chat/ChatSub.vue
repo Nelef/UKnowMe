@@ -1,7 +1,7 @@
 <template>
   <div class="chat-sub-spacer" aria-hidden="true"></div>
 
-  <div class="chat-sub">
+  <div ref="chatSubDesktop" class="chat-sub">
     <section class="chat-keyword-container">
       <div class="keyword-box">
         <div class="keyword-content">
@@ -83,6 +83,7 @@
   </div>
 
   <div
+    ref="chatSubMobile"
     :class="[
       'chat-sub-mobile',
       { 'chat-sub-mobile-expanded': chatExpand },
@@ -187,7 +188,6 @@
 
 <script>
 import { useChatStore } from "@/stores/chat/chat";
-import { nextTick, onBeforeUnmount, onMounted } from "vue";
 
 export default {
   data() {
@@ -195,43 +195,106 @@ export default {
       success: false,
       chatExpand: false,
       heartDelays: [0, 1, 2, 3],
+      chatSubResizeObserver: null,
+      chatSubResizeFrame: null,
+      chatSubWindowResizeHandler: null,
     };
   },
   setup() {
     const chat = useChatStore();
-    let mediaViewContent = null;
-    let viewChangeHandler = null;
-
-    onMounted(() => {
-      nextTick(() => {
-        const applyResponsiveLayout = (isMobile) => {
-          document.documentElement.style.setProperty(
-            "--chat-sub-size",
-            isMobile ? "400px" : "200px"
-          );
-        };
-
-        applyResponsiveLayout(window.innerWidth < 1120);
-
-        mediaViewContent = window.matchMedia(`(max-width: 1120px)`);
-        viewChangeHandler = (event) => {
-          applyResponsiveLayout(event.matches);
-        };
-        mediaViewContent.addEventListener("change", viewChangeHandler);
-      });
-    });
-
-    onBeforeUnmount(() => {
-      if (mediaViewContent && viewChangeHandler) {
-        mediaViewContent.removeEventListener("change", viewChangeHandler);
-      }
-    });
-
     return {
       chat,
     };
   },
+  mounted() {
+    this.chatSubWindowResizeHandler = () => {
+      this.scheduleChatSubSpacerSync();
+    };
+    window.addEventListener("resize", this.chatSubWindowResizeHandler);
+
+    if (typeof window !== "undefined" && "ResizeObserver" in window) {
+      this.chatSubResizeObserver = new window.ResizeObserver(() => {
+        this.scheduleChatSubSpacerSync();
+      });
+
+      [this.$refs.chatSubDesktop, this.$refs.chatSubMobile]
+        .filter(Boolean)
+        .forEach((element) => {
+          this.chatSubResizeObserver.observe(element);
+        });
+    }
+
+    this.scheduleChatSubSpacerSync();
+  },
+  beforeUnmount() {
+    if (this.chatSubWindowResizeHandler) {
+      window.removeEventListener("resize", this.chatSubWindowResizeHandler);
+    }
+
+    if (this.chatSubResizeObserver) {
+      this.chatSubResizeObserver.disconnect();
+      this.chatSubResizeObserver = null;
+    }
+
+    if (this.chatSubResizeFrame) {
+      window.cancelAnimationFrame(this.chatSubResizeFrame);
+      this.chatSubResizeFrame = null;
+    }
+  },
   methods: {
+    scheduleChatSubSpacerSync() {
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      if (this.chatSubResizeFrame) {
+        window.cancelAnimationFrame(this.chatSubResizeFrame);
+      }
+
+      this.chatSubResizeFrame = window.requestAnimationFrame(() => {
+        this.chatSubResizeFrame = null;
+        this.syncChatSubSpacerSize();
+      });
+    },
+    measureCollapsedMobilePanelHeight() {
+      const mobilePanel = this.$refs.chatSubMobile;
+      if (!mobilePanel) {
+        return 400;
+      }
+
+      const panelRect = mobilePanel.getBoundingClientRect();
+      const clone = mobilePanel.cloneNode(true);
+
+      clone.classList.remove("chat-sub-mobile-expanded");
+      clone.style.position = "fixed";
+      clone.style.left = "-10000px";
+      clone.style.bottom = "0";
+      clone.style.width = `${Math.max(panelRect.width, 0)}px`;
+      clone.style.maxWidth = `${Math.max(panelRect.width, 0)}px`;
+      clone.style.visibility = "hidden";
+      clone.style.pointerEvents = "none";
+      clone.style.opacity = "1";
+      clone.style.transform = "none";
+      clone.style.transition = "none";
+
+      document.body.appendChild(clone);
+      const nextSize = clone.offsetHeight || 400;
+      clone.remove();
+
+      return nextSize;
+    },
+    syncChatSubSpacerSize() {
+      const isMobile = window.innerWidth <= 1120;
+      const fallbackSize = isMobile ? 400 : 200;
+      const nextSize = isMobile
+        ? this.measureCollapsedMobilePanelHeight()
+        : this.$refs.chatSubDesktop?.offsetHeight || fallbackSize;
+
+      document.documentElement.style.setProperty(
+        "--chat-sub-size",
+        `${nextSize}px`
+      );
+    },
     love() {
       if (this.chat.soloMode) {
         this.chat.heartClick();
@@ -268,6 +331,7 @@ export default {
     },
     chatSubMobileClick() {
       this.chatExpand = !this.chatExpand;
+      this.scheduleChatSubSpacerSync();
     },
   },
 };

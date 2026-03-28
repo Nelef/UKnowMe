@@ -68,50 +68,6 @@ const getChatAvatarRenderSize = () =>
 const getChatRenderPixelRatio = () =>
   isAppleTouchDevice() ? 0.9 : CHAT_RENDER_PIXEL_RATIO;
 
-const getForcedMotionDelegate = () => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const delegate = window.localStorage.getItem("ukm-motion-delegate");
-  if (delegate === "GPU" || delegate === "CPU") {
-    return delegate;
-  }
-
-  return null;
-};
-
-const canCreateWebgl2Context = (canvas) => {
-  if (typeof document === "undefined") {
-    return false;
-  }
-
-  const probeCanvas = canvas || document.createElement("canvas");
-  try {
-    const gl =
-      probeCanvas.getContext("webgl2", {
-        antialias: false,
-        alpha: true,
-        depth: true,
-        stencil: false,
-        premultipliedAlpha: false,
-        preserveDrawingBuffer: false,
-        powerPreference: "high-performance",
-      }) ||
-      probeCanvas.getContext("experimental-webgl2");
-
-    if (!gl) {
-      return false;
-    }
-
-    const loseContext = gl.getExtension("WEBGL_lose_context");
-    loseContext?.loseContext?.();
-    return true;
-  } catch (error) {
-    return false;
-  }
-};
-
 const loadTasksVisionModule = async () => {
   if (!tasksVisionModulePromise) {
     tasksVisionModulePromise = import(
@@ -745,19 +701,10 @@ export const useChatStore = defineStore('chat', {
       this.setElementDisplay(debugPreview, debugEnabled ? "block" : "none");
     },
     getPreferredHolisticDelegate() {
-      return getForcedMotionDelegate() || "CPU";
+      return "CPU";
     },
-    resolveHolisticDelegate(requestedDelegate) {
-      if (requestedDelegate !== "GPU") {
-        return "CPU";
-      }
-
-      const { gpuCanvas } = this.getTrackingPreviewElements();
-      if (!gpuCanvas || !canCreateWebgl2Context(gpuCanvas)) {
-        return "CPU";
-      }
-
-      return "GPU";
+    resolveHolisticDelegate() {
+      return "CPU";
     },
     supportsHolisticWorker() {
       return (
@@ -916,7 +863,7 @@ export const useChatStore = defineStore('chat', {
           this.holistic = null;
         }
 
-        this.loadingText = "모션 인식을 준비하고 있습니다.<br>WORKER";
+        this.loadingText = "워커로 모션 인식을 준비하고 있습니다.";
         this.setLoadingState(50);
 
         try {
@@ -1018,12 +965,7 @@ export const useChatStore = defineStore('chat', {
       });
 
       this.holisticDelegate = resolvedDelegate;
-      this.holisticDelegateStatus =
-        delegate === "GPU" && resolvedDelegate !== "GPU"
-          ? "gpu-precheck-failed"
-          : resolvedDelegate === "GPU"
-            ? "gpu-active"
-            : "cpu-active";
+      this.holisticDelegateStatus = "cpu-active";
       this.holisticFallbackAttempted = resolvedDelegate === "CPU";
       this.holisticEmptyFaceFrames = 0;
       this.holisticFrameInFlight = false;
@@ -1031,39 +973,6 @@ export const useChatStore = defineStore('chat', {
       this.holisticTrackingLogged = false;
 
       return this.holistic;
-    },
-    async reconfigureHolisticDelegate() {
-      const { primaryCanvas, debugCanvas } = this.getTrackingPreviewElements();
-      const guideCanvas = debugCanvas || primaryCanvas;
-      const preferredDelegate = this.getPreferredHolisticDelegate();
-
-      if (!guideCanvas) {
-        this.holisticRequestedDelegate = preferredDelegate;
-        this.holisticDelegateStatus =
-          preferredDelegate === "GPU" ? "gpu-precheck-failed" : "cpu-active";
-        return this.holisticDelegate || "CPU";
-      }
-
-      try {
-        await this.ensureHolisticLandmarker(preferredDelegate, guideCanvas, {
-          forceRecreate: true,
-        });
-      } catch (error) {
-        if (preferredDelegate === "GPU") {
-          console.warn(
-            "GPU HolisticLandmarker 초기화에 실패해 CPU delegate로 재시도합니다.",
-            error
-          );
-          this.holisticDelegateStatus = "gpu-init-failed";
-          await this.ensureHolisticLandmarker("CPU", guideCanvas, {
-            forceRecreate: true,
-          });
-        } else {
-          throw error;
-        }
-      }
-
-      return this.holisticDelegate || "CPU";
     },
     avatarLoad(id) {
       console.log("1. 아바타 로드 시작");
@@ -1772,7 +1681,7 @@ export const useChatStore = defineStore('chat', {
       const preferredDelegate = this.getPreferredHolisticDelegate();
       this.logDebug("startHolistic:preferredDelegate", {
         preferredDelegate,
-        forcedDelegate: getForcedMotionDelegate(),
+        processingMode: "worker-first",
       });
 
       try {
