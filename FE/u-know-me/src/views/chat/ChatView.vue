@@ -103,6 +103,23 @@
     <game-modal v-if="chat.gameBtn === 1" />
     <!-- <chat-something /> -->
     <loading-modal v-if="chat.loading === 1" />
+    <div
+      v-if="safariBootstrapVisible"
+      class="chat-start-overlay"
+    >
+      <div class="chat-start-card">
+        <strong>지원 브라우저 안내</strong>
+        <p>현재 iOS에서는 Chrome 앱에서만 채팅 입장을 지원합니다.</p>
+        <p>Safari에서는 아바타 카메라 송출이 정상 동작하지 않아 입장할 수 없습니다.</p>
+        <button
+          type="button"
+          class="chat-start-button"
+          @click="goBackToMain"
+        >
+          메인으로 돌아가기
+        </button>
+      </div>
+    </div>
     <live-kit-limit-modal v-if="chat.liveKitQuotaModal" />
   </div>
 </template>
@@ -126,6 +143,26 @@ import LiveKitLimitModal from "@/components/chat/LiveKitLimitModal.vue";
 import sr from "@/api/spring-rest";
 
 axios.defaults.headers.post["Content-Type"] = "application/json";
+
+const isIOSSafariBrowser = () => {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  const userAgent = navigator.userAgent || "";
+  const isAppleTouchDevice =
+    /iPhone|iPad|iPod/i.test(userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+  if (!isAppleTouchDevice) {
+    return false;
+  }
+
+  return (
+    /Safari/i.test(userAgent) &&
+    !/CriOS|FxiOS|EdgiOS|OPiOS|YaBrowser|DuckDuckGo|GSA/i.test(userAgent)
+  );
+};
 
 export default {
   name: "App",
@@ -331,6 +368,8 @@ export default {
         width: viewportWidth,
         height: viewportHeight,
       },
+      safariBootstrapVisible: false,
+      joinSessionStarted: false,
     };
   },
   mounted() {
@@ -370,7 +409,16 @@ export default {
       this.layoutRevision += 1;
       this.syncFloatingMonitorPosition();
     });
-    this.joinSession();
+    if (isIOSSafariBrowser()) {
+      this.chat.loading = 0;
+      this.chat.setLoadingState(0, "iOS Safari는 현재 지원하지 않습니다.");
+      this.safariBootstrapVisible = true;
+      this.chat.logDebug("joinSession:iosSafariUnsupported", {
+        route: this.$route.fullPath,
+      });
+    } else {
+      this.beginSessionStartup();
+    }
     this.chat.systemMessagePrint(
       "상대를 배려하며 대화를 시작해 주세요."
     );
@@ -409,6 +457,20 @@ export default {
     this.chat.leaveSession({ navigate: false }).finally(() => next());
   },
   methods: {
+    goBackToMain() {
+      this.chat.leaveSession({ navigate: false }).finally(() => {
+        this.$router.push({ name: "main" });
+      });
+    },
+    beginSessionStartup() {
+      if (this.joinSessionStarted) {
+        return;
+      }
+
+      this.joinSessionStarted = true;
+      this.safariBootstrapVisible = false;
+      this.joinSession();
+    },
     getStageViewportMetrics() {
       const shell = this.$refs.stageShell;
       const header = this.$refs.stageHeader;
@@ -518,6 +580,10 @@ export default {
         console.error("채팅 초기화 중 오류가 발생했습니다.", error);
         this.chat.setLoadingState(0, "모션 인식을 시작하지 못했습니다.");
         this.chat.loading = 0;
+        this.joinSessionStarted = false;
+        if (isIOSSafariBrowser()) {
+          this.safariBootstrapVisible = true;
+        }
       }
     },
 
@@ -1102,6 +1168,78 @@ h1 {
   z-index: 1;
 }
 
+.chat-start-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.34), transparent 36%),
+    rgba(20, 14, 34, 0.42);
+  backdrop-filter: blur(16px);
+}
+
+.chat-start-card {
+  width: min(100%, 420px);
+  padding: 28px 24px 24px;
+  border-radius: 28px;
+  background:
+    linear-gradient(160deg, rgba(255, 249, 255, 0.98), rgba(238, 229, 255, 0.96));
+  box-shadow: 0 24px 52px rgba(29, 18, 49, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+
+.chat-start-card strong {
+  font-size: 25px;
+  font-weight: 800;
+  color: #241936;
+  line-height: 1.15;
+}
+
+.chat-start-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: rgba(50, 35, 77, 0.74);
+}
+
+.chat-start-button {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: auto;
+  min-height: 58px;
+  margin-top: 6px;
+  border: 0;
+  border-radius: 18px;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, #7f56d9, #9d72ff);
+  box-shadow:
+    0 18px 36px rgba(104, 67, 166, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  overflow: visible;
+}
+
+.chat-start-button::before {
+  display: none;
+  content: none;
+}
+
+.chat-start-button:hover {
+  background: linear-gradient(135deg, #734bd1, #9668ff);
+  color: #ffffff;
+}
+
 .chat-stage {
   flex: 1;
   width: 100%;
@@ -1363,6 +1501,20 @@ h1 {
 }
 
 @media screen and (max-width: 760px) {
+  .chat-start-overlay {
+    padding: 16px;
+  }
+
+  .chat-start-card {
+    width: 100%;
+    padding: 24px 18px 18px;
+    border-radius: 24px;
+  }
+
+  .chat-start-card strong {
+    font-size: 22px;
+  }
+
   .chat-stage-shell {
     padding: 12px 12px 0;
     gap: 12px;

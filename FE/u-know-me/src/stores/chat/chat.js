@@ -39,6 +39,10 @@ const CHAT_DESKTOP_AVATAR_SIZE = { width: 960, height: 720 };
 const CHAT_MOBILE_AVATAR_SIZE = { width: 720, height: 540 };
 const CHAT_MOTION_MIN_CONFIDENCE = 0.45;
 const CHAT_CAPTURE_BACKGROUND_COLOR = "#252525";
+const AVATAR_CAPTURE_STRATEGY = Object.freeze({
+  BRIDGE_CANVAS: "bridge-canvas",
+  DIRECT_CANVAS: "direct-canvas",
+});
 
 const isAppleTouchDevice = () => {
   if (typeof navigator === "undefined") {
@@ -50,6 +54,24 @@ const isAppleTouchDevice = () => {
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
   );
 };
+
+const isIOSSafariBrowser = () => {
+  if (!isAppleTouchDevice() || typeof navigator === "undefined") {
+    return false;
+  }
+
+  const userAgent = navigator.userAgent || "";
+
+  return (
+    /Safari/i.test(userAgent) &&
+    !/CriOS|FxiOS|EdgiOS|OPiOS|YaBrowser|DuckDuckGo|GSA/i.test(userAgent)
+  );
+};
+
+const getAvatarCaptureStrategy = () =>
+  isIOSSafariBrowser()
+    ? AVATAR_CAPTURE_STRATEGY.DIRECT_CANVAS
+    : AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS;
 
 const isCompactViewport = () =>
   typeof window !== "undefined" &&
@@ -1419,36 +1441,56 @@ export const useChatStore = defineStore('chat', {
 
       //three
       const useAppleTouchRenderingProfile = isAppleTouchDevice();
-      const scene = new THREE.Scene();
-      const renderer = new THREE.WebGLRenderer({
+      const preferDirectSafariCapture =
+        getAvatarCaptureStrategy() === AVATAR_CAPTURE_STRATEGY.DIRECT_CANVAS;
+      const rendererCanvas = document.createElement("canvas");
+      const rendererContextAttributes = {
         alpha: true,
         antialias: !useAppleTouchRenderingProfile,
         preserveDrawingBuffer: useAppleTouchRenderingProfile,
         powerPreference: useAppleTouchRenderingProfile
           ? "default"
           : "high-performance",
+      };
+      const rendererContext = preferDirectSafariCapture
+        ? rendererCanvas.getContext("webgl2", rendererContextAttributes) ||
+          rendererCanvas.getContext("webgl", rendererContextAttributes)
+        : null;
+      const scene = new THREE.Scene();
+      const renderer = new THREE.WebGLRenderer({
+        ...rendererContextAttributes,
+        canvas: rendererCanvas,
+        ...(rendererContext ? { context: rendererContext } : {}),
       });
       const avatarRenderSize = getChatAvatarRenderSize();
       renderer.setSize(avatarRenderSize.width, avatarRenderSize.height);
       renderer.setPixelRatio(getChatRenderPixelRatio());
       renderer.domElement.id = "avatarCanvas" + useMainStore().option.matchingRoom;
-      const avatarCaptureCanvas = document.createElement("canvas");
-      avatarCaptureCanvas.className = "avatar-capture-canvas";
-      avatarCaptureCanvas.width = avatarRenderSize.width;
-      avatarCaptureCanvas.height = avatarRenderSize.height;
-      const avatarCaptureContext = avatarCaptureCanvas.getContext("2d", {
-        alpha: false,
-      });
-      if (!avatarCaptureContext) {
-        throw new Error("아바타 캡처 캔버스를 초기화할 수 없습니다.");
+      const avatarCaptureStrategy = getAvatarCaptureStrategy();
+      const shouldUseCaptureBridgeCanvas =
+        avatarCaptureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS;
+      let avatarCaptureCanvas = null;
+      let avatarCaptureContext = null;
+
+      if (shouldUseCaptureBridgeCanvas) {
+        avatarCaptureCanvas = document.createElement("canvas");
+        avatarCaptureCanvas.className = "avatar-capture-canvas";
+        avatarCaptureCanvas.width = avatarRenderSize.width;
+        avatarCaptureCanvas.height = avatarRenderSize.height;
+        avatarCaptureContext = avatarCaptureCanvas.getContext("2d", {
+          alpha: false,
+        });
+        if (!avatarCaptureContext) {
+          throw new Error("아바타 캡처 캔버스를 초기화할 수 없습니다.");
+        }
+        avatarCaptureContext.fillStyle = CHAT_CAPTURE_BACKGROUND_COLOR;
+        avatarCaptureContext.fillRect(
+          0,
+          0,
+          avatarCaptureCanvas.width,
+          avatarCaptureCanvas.height
+        );
       }
-      avatarCaptureContext.fillStyle = CHAT_CAPTURE_BACKGROUND_COLOR;
-      avatarCaptureContext.fillRect(
-        0,
-        0,
-        avatarCaptureCanvas.width,
-        avatarCaptureCanvas.height
-      );
 
       const myVideoContainer = document.getElementById("my-video");
       if (!myVideoContainer) {
@@ -1459,7 +1501,9 @@ export const useChatStore = defineStore('chat', {
       });
 
       myVideoContainer.prepend(renderer.domElement);
-      myVideoContainer.prepend(avatarCaptureCanvas);
+      if (avatarCaptureCanvas) {
+        myVideoContainer.prepend(avatarCaptureCanvas);
+      }
 
       // camera
       const orbitCamera = new THREE.PerspectiveCamera(
@@ -1476,6 +1520,12 @@ export const useChatStore = defineStore('chat', {
       this.avatarCaptureContext = markRaw(avatarCaptureContext);
       this.avatarCaptureTrack = null;
       this.avatarCaptureManualFrames = false;
+      this.logDebug("avatarLoad:captureStrategy", {
+        avatarCaptureStrategy,
+        rendererContext:
+          renderer.getContext()?.constructor?.name ||
+          (renderer.capabilities.isWebGL2 ? "WebGL2RenderingContext" : "unknown"),
+      });
 
       // light
       const light = new THREE.DirectionalLight(0xffffff);
@@ -1718,6 +1768,91 @@ export const useChatStore = defineStore('chat', {
         currentVrm.lookAt.applyer.lookAt(lookTarget);
       };
 
+      const getHandLandmarkDistanceSquared = (handLandmarks, poseLandmark) => {
+        const handWrist = Array.isArray(handLandmarks) ? handLandmarks[0] : null;
+        if (!handWrist || !poseLandmark) {
+          return Number.POSITIVE_INFINITY;
+        }
+
+        const dx = (handWrist.x ?? 0) - (poseLandmark.x ?? 0);
+        const dy = (handWrist.y ?? 0) - (poseLandmark.y ?? 0);
+
+        return dx * dx + dy * dy;
+      };
+
+      const resolveTrackedHandLandmarks = (results) => {
+        const handCandidates = [
+          Array.isArray(results?.leftHandLandmarks) &&
+          results.leftHandLandmarks.length
+            ? results.leftHandLandmarks
+            : null,
+          Array.isArray(results?.rightHandLandmarks) &&
+          results.rightHandLandmarks.length
+            ? results.rightHandLandmarks
+            : null,
+        ].filter(Boolean);
+
+        if (!handCandidates.length) {
+          return {
+            leftHandLandmarks: null,
+            rightHandLandmarks: null,
+          };
+        }
+
+        const poseLandmarks = Array.isArray(results?.poseLandmarks)
+          ? results.poseLandmarks
+          : null;
+        const poseLeftWrist = poseLandmarks?.[15] || null;
+        const poseRightWrist = poseLandmarks?.[16] || null;
+
+        if (!poseLeftWrist || !poseRightWrist) {
+          return {
+            leftHandLandmarks: handCandidates[0] || null,
+            rightHandLandmarks: handCandidates[1] || null,
+          };
+        }
+
+        if (handCandidates.length === 1) {
+          const onlyHand = handCandidates[0];
+          const leftDistance = getHandLandmarkDistanceSquared(
+            onlyHand,
+            poseLeftWrist
+          );
+          const rightDistance = getHandLandmarkDistanceSquared(
+            onlyHand,
+            poseRightWrist
+          );
+
+          return leftDistance <= rightDistance
+            ? {
+                leftHandLandmarks: onlyHand,
+                rightHandLandmarks: null,
+              }
+            : {
+                leftHandLandmarks: null,
+                rightHandLandmarks: onlyHand,
+              };
+        }
+
+        const [firstHand, secondHand] = handCandidates;
+        const directAssignmentScore =
+          getHandLandmarkDistanceSquared(firstHand, poseLeftWrist) +
+          getHandLandmarkDistanceSquared(secondHand, poseRightWrist);
+        const swappedAssignmentScore =
+          getHandLandmarkDistanceSquared(firstHand, poseRightWrist) +
+          getHandLandmarkDistanceSquared(secondHand, poseLeftWrist);
+
+        return directAssignmentScore <= swappedAssignmentScore
+          ? {
+              leftHandLandmarks: firstHand,
+              rightHandLandmarks: secondHand,
+            }
+          : {
+              leftHandLandmarks: secondHand,
+              rightHandLandmarks: firstHand,
+            };
+      };
+
       /* VRM Character Animator */
       const animateVRM = (vrm, results) => {
         if (!vrm) {
@@ -1731,9 +1866,13 @@ export const useChatStore = defineStore('chat', {
         const pose3DLandmarks = results.ea;
         // Pose 2D landmarks are with respect to videoWidth and videoHeight
         const pose2DLandmarks = results.poseLandmarks;
-        // Be careful, hand landmarks may be reversed
-        const leftHandLandmarks = results.rightHandLandmarks;
-        const rightHandLandmarks = results.leftHandLandmarks;
+        const {
+          leftHandLandmarks: trackedLeftHandLandmarks,
+          rightHandLandmarks: trackedRightHandLandmarks,
+        } = resolveTrackedHandLandmarks(results);
+        // Mirror hand ownership for the avatar so screen-left/right motion feels natural.
+        const leftHandLandmarks = trackedRightHandLandmarks;
+        const rightHandLandmarks = trackedLeftHandLandmarks;
 
         // Animate Face
         if (faceLandmarks) {
@@ -1781,7 +1920,7 @@ export const useChatStore = defineStore('chat', {
           riggedLeftHand = Kalidokit.Hand.solve(leftHandLandmarks, "Left");
           rigRotation("LeftHand", {
             // Combine pose rotation Z and hand rotation X Y
-            z: riggedPose.LeftHand.z,
+            z: riggedPose?.LeftHand?.z || 0,
             y: riggedLeftHand.LeftWrist.y,
             x: riggedLeftHand.LeftWrist.x,
           });
@@ -1805,7 +1944,7 @@ export const useChatStore = defineStore('chat', {
           riggedRightHand = Kalidokit.Hand.solve(rightHandLandmarks, "Right");
           rigRotation("RightHand", {
             // Combine Z axis from pose hand and X/Y axis from hand wrist rotation
-            z: riggedPose.RightHand.z,
+            z: riggedPose?.RightHand?.z || 0,
             y: riggedRightHand.RightWrist.y,
             x: riggedRightHand.RightWrist.x,
           });
@@ -2217,8 +2356,13 @@ export const useChatStore = defineStore('chat', {
         height: avatarCanvas.height,
       });
       avatarCanvas.style.display = "inline-block";
-      const captureCanvas = this.avatarCaptureCanvas || avatarCanvas;
+      const captureStrategy = getAvatarCaptureStrategy();
+      const captureCanvas =
+        captureStrategy === AVATAR_CAPTURE_STRATEGY.DIRECT_CANVAS
+          ? avatarCanvas
+          : this.avatarCaptureCanvas || avatarCanvas;
       if (
+        captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS &&
         captureCanvas !== avatarCanvas &&
         this.avatarCaptureContext &&
         this.avatarCaptureCanvas
@@ -2239,59 +2383,79 @@ export const useChatStore = defineStore('chat', {
         );
       }
 
-      const testVideo = await this.waitForDomElement("test-video", { by: "id" });
-      this.prepareVideoElement(testVideo);
-      this.logDebug("startHolistic:testVideoReady", {
-        testVideoId: "test-video",
-      });
-      if (testVideo.srcObject) {
-        const tracks = testVideo.srcObject.getTracks?.() || [];
-        tracks.forEach((track) => track.stop());
+      let testVideo = null;
+      if (captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS) {
+        testVideo = await this.waitForDomElement("test-video", { by: "id" });
+        this.prepareVideoElement(testVideo);
+        this.logDebug("startHolistic:testVideoReady", {
+          testVideoId: "test-video",
+        });
+        if (testVideo.srcObject) {
+          const tracks = testVideo.srcObject.getTracks?.() || [];
+          tracks.forEach((track) => track.stop());
+        }
       }
-      const preferTimedCanvasCapture = isAppleTouchDevice();
+
+      const preferTimedCanvasCapture =
+        captureStrategy === AVATAR_CAPTURE_STRATEGY.DIRECT_CANVAS ||
+        isAppleTouchDevice();
       let captureStream = captureCanvas.captureStream(
         preferTimedCanvasCapture ? CHAT_CAPTURE_FPS : 0
       );
       let captureTrack = captureStream.getVideoTracks?.()[0] || null;
       let useManualFrames =
+        captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS &&
         !preferTimedCanvasCapture &&
         typeof captureTrack?.requestFrame === "function";
 
-      if (!preferTimedCanvasCapture && !useManualFrames) {
+      if (
+        captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS &&
+        !preferTimedCanvasCapture &&
+        !useManualFrames
+      ) {
         captureStream.getTracks?.().forEach((track) => track.stop());
         captureStream = captureCanvas.captureStream(CHAT_CAPTURE_FPS);
         captureTrack = captureStream.getVideoTracks?.()[0] || null;
       }
 
+      if (!captureTrack) {
+        throw new Error("아바타 캡처 비디오 트랙을 생성하지 못했습니다.");
+      }
+
       this.avatarCaptureTrack = captureTrack;
       this.avatarCaptureManualFrames = useManualFrames;
-      if (captureTrack) {
-        captureTrack.contentHint = "motion";
-      }
-      if (isAppleTouchDevice()) {
-        await new Promise((resolve) => window.setTimeout(resolve, 0));
-      }
-      testVideo.srcObject = captureStream;
+      captureTrack.contentHint = "motion";
       if (useManualFrames) {
         this.avatarCaptureTrack?.requestFrame?.();
       }
-      if (isAppleTouchDevice()) {
-        await new Promise((resolve) => window.setTimeout(resolve, 0));
-      }
-      try {
-        await testVideo.play();
-      } catch (error) {
-        console.warn("아바타 캡처 비디오 재생 요청에 실패했습니다.", error);
+      if (testVideo) {
+        if (isAppleTouchDevice()) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+        }
+        testVideo.srcObject = captureStream;
+        if (isAppleTouchDevice()) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+        }
+        try {
+          await testVideo.play();
+        } catch (error) {
+          console.warn("아바타 캡처 비디오 재생 요청에 실패했습니다.", error);
+        }
       }
       this.logDebug("startHolistic:captureStreamReady", {
+        captureStrategy,
         captureCanvasTag: captureCanvas?.tagName || "canvas",
         captureCanvasWidth: captureCanvas?.width || 0,
         captureCanvasHeight: captureCanvas?.height || 0,
         captureManualFrames: useManualFrames,
-        trackCount: testVideo.srcObject?.getVideoTracks?.().length || 0,
+        usesCapturePreviewVideo:
+          captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS,
+        trackCount:
+          testVideo?.srcObject?.getVideoTracks?.().length ||
+          (captureTrack ? 1 : 0),
       });
 
-      var avatarVideo = captureTrack || testVideo.srcObject.getVideoTracks()[0];
+      const avatarVideo = captureTrack;
 
       console.log("4. Holistic 로드 완료");
       this.setLoadingState(85, "모션 인식 준비가 완료되었습니다.");

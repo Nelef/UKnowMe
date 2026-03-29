@@ -243,15 +243,20 @@
               :disabled="chat.motionProfileSwitching || option.disabled"
               @click="selectMotionProfile(option.value)"
             >
-              <div class="motion-sheet-option-main">
-                <div class="motion-sheet-option-copy">
-                  <strong>{{ option.label }}</strong>
-                  <p>{{ option.description }}</p>
-                </div>
+              <div class="motion-sheet-option-head">
+                <strong class="motion-sheet-option-title">
+                  {{ option.label }}
+                </strong>
                 <span v-if="option.badge" class="motion-sheet-option-badge">
                   {{ option.badge }}
                 </span>
               </div>
+              <p
+                v-if="option.description"
+                class="motion-sheet-option-description"
+              >
+                {{ option.description }}
+              </p>
               <p
                 v-if="option.disabled && option.disabledReason"
                 class="motion-sheet-option-reason"
@@ -866,11 +871,16 @@ export default {
 }
 
 .motion-sheet-close {
+  appearance: none;
+  -webkit-appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: auto;
+  height: auto;
+  min-height: 56px;
   border: 0;
-  padding: 10px 14px;
+  padding: 14px 18px;
   border-radius: 999px;
   background: rgba(89, 55, 139, 0.12);
   color: #3c2859;
@@ -880,7 +890,17 @@ export default {
   flex-shrink: 0;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  overflow: visible;
+  box-shadow:
+    0 10px 24px rgba(89, 55, 139, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
   transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.motion-sheet-close::before,
+.motion-sheet-option::before {
+  display: none;
+  content: none;
 }
 
 .motion-sheet-close:hover {
@@ -893,36 +913,52 @@ export default {
   flex-direction: column;
   flex: 1 1 auto;
   align-items: stretch;
-  gap: 12px;
+  gap: 14px;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: 2px;
 }
 
 .motion-sheet-option {
+  appearance: none;
+  -webkit-appearance: none;
   width: 100%;
+  height: auto;
+  min-height: 0;
   max-width: none;
   box-sizing: border-box;
-  border: 0;
-  border-radius: 22px;
-  padding: 28px 24px 24px;
-  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(134, 92, 195, 0.12);
+  border-radius: 24px;
+  padding: 22px 22px 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 241, 255, 0.94));
   color: #241936;
   text-align: left;
   cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  box-shadow: inset 0 0 0 1px rgba(134, 92, 195, 0.08);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  align-items: start;
+  justify-items: stretch;
+  gap: 12px;
+  box-shadow:
+    0 12px 32px rgba(96, 69, 148, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  white-space: normal;
+  overflow: visible;
   transition: transform 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease,
-    opacity 0.18s ease;
+    border-color 0.18s ease, opacity 0.18s ease;
 }
 
 .motion-sheet-option:hover {
   transform: translateY(-1px);
-  background: rgba(243, 233, 255, 0.96);
-  box-shadow: inset 0 0 0 1px rgba(134, 92, 195, 0.16);
+  background:
+    linear-gradient(180deg, rgba(252, 247, 255, 0.98), rgba(242, 231, 255, 0.96));
+  border-color: rgba(134, 92, 195, 0.22);
+  box-shadow:
+    0 16px 36px rgba(96, 69, 148, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.84);
 }
 
 .motion-sheet-option:disabled {
@@ -932,52 +968,50 @@ export default {
 }
 
 .motion-sheet-option-active {
-  background: linear-gradient(135deg, #f1e2ff, #e2c9ff);
+  background:
+    linear-gradient(135deg, rgba(241, 226, 255, 0.98), rgba(226, 201, 255, 0.98));
+  border-color: rgba(111, 64, 174, 0.24);
   box-shadow:
-    inset 0 0 0 1px rgba(111, 64, 174, 0.22),
-    0px 10px 24px rgba(102, 64, 155, 0.12);
+    0 18px 40px rgba(102, 64, 155, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
-.motion-sheet-option-main {
+.motion-sheet-option-head {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px 12px;
   min-width: 0;
 }
 
-.motion-sheet-option-copy {
+.motion-sheet-option-title {
+  display: block;
   min-width: 0;
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-.motion-sheet-option-copy strong {
+  flex: 1 1 220px;
   font-size: 19px;
   font-weight: 900;
-  line-height: 1.2;
-  min-width: 0;
+  line-height: 1.3;
   white-space: normal;
-  word-break: keep-all;
+  word-break: normal;
   overflow-wrap: anywhere;
 }
 
-.motion-sheet-option-copy p {
+.motion-sheet-option-description {
   margin: 0;
   font-size: 14px;
   line-height: 1.6;
   color: rgba(36, 25, 54, 0.72);
   white-space: normal;
-  word-break: keep-all;
+  word-break: normal;
   overflow-wrap: anywhere;
 }
 
 .motion-sheet-option-badge {
-  padding: 5px 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 5px 10px;
   border-radius: 999px;
   background: rgba(74, 45, 116, 0.1);
   font-size: 11px;
@@ -986,18 +1020,21 @@ export default {
   text-transform: uppercase;
   color: #52307d;
   flex-shrink: 0;
-  align-self: flex-start;
+  max-width: 100%;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 .motion-sheet-option-reason {
   margin: 0;
-  padding-top: 10px;
+  padding-top: 12px;
   border-top: 1px solid rgba(111, 64, 174, 0.12);
   font-size: 12px;
   line-height: 1.5;
   color: rgba(82, 48, 125, 0.82);
   white-space: normal;
-  word-break: keep-all;
+  word-break: normal;
   overflow-wrap: anywhere;
 }
 
@@ -1289,17 +1326,16 @@ export default {
   }
 
   .motion-sheet-option {
-    padding: 24px 18px 20px;
+    padding: 20px 18px 18px;
   }
 
-  .motion-sheet-option-main {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
+  .motion-sheet-option-head {
+    gap: 8px 10px;
   }
 
-  .motion-sheet-option-copy {
-    width: 100%;
+  .motion-sheet-option-title {
+    flex-basis: 100%;
+    font-size: 18px;
   }
 }
 </style>
