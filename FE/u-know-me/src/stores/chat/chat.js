@@ -295,6 +295,8 @@ export const useChatStore = defineStore('chat', {
     avatarScene: null,
     avatarOrbitControls: null,
     avatarAnimationFrameId: null,
+    avatarCaptureCanvas: null,
+    avatarCaptureContext: null,
     SessionName: "SessionA",
     otherPeople: [],
     motionCheck:
@@ -517,6 +519,8 @@ export const useChatStore = defineStore('chat', {
         }
         this.avatarRenderer = null;
       }
+      this.avatarCaptureCanvas = null;
+      this.avatarCaptureContext = null;
 
       if (closeHolistic && this.holistic) {
         try {
@@ -1409,6 +1413,13 @@ export const useChatStore = defineStore('chat', {
       renderer.setSize(avatarRenderSize.width, avatarRenderSize.height);
       renderer.setPixelRatio(getChatRenderPixelRatio());
       renderer.domElement.id = "avatarCanvas" + useMainStore().option.matchingRoom;
+      const avatarCaptureCanvas = document.createElement("canvas");
+      avatarCaptureCanvas.width = avatarRenderSize.width;
+      avatarCaptureCanvas.height = avatarRenderSize.height;
+      const avatarCaptureContext = avatarCaptureCanvas.getContext("2d", {
+        alpha: false,
+        desynchronized: true,
+      });
 
       const myVideoContainer = document.getElementById("my-video");
       if (!myVideoContainer) {
@@ -1431,6 +1442,8 @@ export const useChatStore = defineStore('chat', {
       this.avatarRenderer = markRaw(renderer);
       this.avatarScene = markRaw(scene);
       this.avatarOrbitControls = null;
+      this.avatarCaptureCanvas = markRaw(avatarCaptureCanvas);
+      this.avatarCaptureContext = markRaw(avatarCaptureContext);
 
       // light
       const light = new THREE.DirectionalLight(0xffffff);
@@ -1441,7 +1454,9 @@ export const useChatStore = defineStore('chat', {
       // Main Render Loop
       let lastFrameAt = performance.now();
       let lastRenderAt = 0;
+      let lastCaptureAt = 0;
       const renderFrameInterval = 1000 / CHAT_RENDER_FPS;
+      const captureFrameInterval = 1000 / CHAT_CAPTURE_FPS;
 
       const animate = (now = 0) => {
         this.avatarAnimationFrameId = requestAnimationFrame(animate);
@@ -1463,6 +1478,27 @@ export const useChatStore = defineStore('chat', {
         }
         lastFrameAt = now;
         renderer.render(scene, orbitCamera);
+
+        if (
+          this.avatarCaptureCanvas &&
+          this.avatarCaptureContext &&
+          now - lastCaptureAt >= captureFrameInterval
+        ) {
+          lastCaptureAt = now;
+          this.avatarCaptureContext.clearRect(
+            0,
+            0,
+            this.avatarCaptureCanvas.width,
+            this.avatarCaptureCanvas.height
+          );
+          this.avatarCaptureContext.drawImage(
+            renderer.domElement,
+            0,
+            0,
+            this.avatarCaptureCanvas.width,
+            this.avatarCaptureCanvas.height
+          );
+        }
       };
       animate();
 
@@ -2137,6 +2173,7 @@ export const useChatStore = defineStore('chat', {
         height: avatarCanvas.height,
       });
       avatarCanvas.style.display = "inline-block";
+      const captureCanvas = this.avatarCaptureCanvas || avatarCanvas;
 
       const testVideo = await this.waitForDomElement("test-video", { by: "id" });
       this.prepareVideoElement(testVideo);
@@ -2147,13 +2184,16 @@ export const useChatStore = defineStore('chat', {
         const tracks = testVideo.srcObject.getTracks?.() || [];
         tracks.forEach((track) => track.stop());
       }
-      testVideo.srcObject = avatarCanvas.captureStream(CHAT_CAPTURE_FPS);
+      testVideo.srcObject = captureCanvas.captureStream(CHAT_CAPTURE_FPS);
       try {
         await testVideo.play();
       } catch (error) {
         console.warn("아바타 캡처 비디오 재생 요청에 실패했습니다.", error);
       }
       this.logDebug("startHolistic:captureStreamReady", {
+        captureCanvasTag: captureCanvas?.tagName || "canvas",
+        captureCanvasWidth: captureCanvas?.width || 0,
+        captureCanvasHeight: captureCanvas?.height || 0,
         trackCount: testVideo.srcObject?.getVideoTracks?.().length || 0,
       });
 
