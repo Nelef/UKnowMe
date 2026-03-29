@@ -15,7 +15,7 @@
               ></video>
               <video
                 id="test-video"
-                style="display: none"
+                class="capture-monitor-video"
                 autoplay
                 muted
                 playsinline
@@ -1163,6 +1163,31 @@ h1 {
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
+}
+
+.avatar-capture-canvas {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 1px !important;
+  height: 1px !important;
+  display: block;
+  opacity: 0.001;
+  pointer-events: none;
+  border: 0 !important;
+  transform: translateZ(0);
+}
+
+.capture-monitor-video {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 1px !important;
+  height: 1px !important;
+  display: block;
+  opacity: 0.001;
+  pointer-events: none;
+  border: 0 !important;
 }
 
 .my-real-video {

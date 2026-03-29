@@ -38,6 +38,7 @@ const CHAT_MOBILE_CAMERA_SIZE = { width: 480, height: 360 };
 const CHAT_DESKTOP_AVATAR_SIZE = { width: 960, height: 720 };
 const CHAT_MOBILE_AVATAR_SIZE = { width: 720, height: 540 };
 const CHAT_MOTION_MIN_CONFIDENCE = 0.45;
+const CHAT_CAPTURE_BACKGROUND_COLOR = "#252525";
 
 const isAppleTouchDevice = () => {
   if (typeof navigator === "undefined") {
@@ -532,6 +533,12 @@ export const useChatStore = defineStore('chat', {
         this.avatarCaptureTrack = null;
       }
       this.avatarCaptureManualFrames = false;
+      const detachedCaptureCanvas = document.querySelector(
+        "#my-video canvas.avatar-capture-canvas"
+      );
+      if (detachedCaptureCanvas?.parentNode) {
+        detachedCaptureCanvas.parentNode.removeChild(detachedCaptureCanvas);
+      }
 
       if (closeHolistic && this.holistic) {
         try {
@@ -754,6 +761,7 @@ export const useChatStore = defineStore('chat', {
       videoElement.defaultMuted = muted;
       videoElement.setAttribute("autoplay", "");
       videoElement.setAttribute("playsinline", "");
+      videoElement.setAttribute("webkit-playsinline", "true");
       if (muted) {
         videoElement.setAttribute("muted", "");
       } else {
@@ -1425,11 +1433,22 @@ export const useChatStore = defineStore('chat', {
       renderer.setPixelRatio(getChatRenderPixelRatio());
       renderer.domElement.id = "avatarCanvas" + useMainStore().option.matchingRoom;
       const avatarCaptureCanvas = document.createElement("canvas");
+      avatarCaptureCanvas.className = "avatar-capture-canvas";
       avatarCaptureCanvas.width = avatarRenderSize.width;
       avatarCaptureCanvas.height = avatarRenderSize.height;
       const avatarCaptureContext = avatarCaptureCanvas.getContext("2d", {
         alpha: false,
       });
+      if (!avatarCaptureContext) {
+        throw new Error("아바타 캡처 캔버스를 초기화할 수 없습니다.");
+      }
+      avatarCaptureContext.fillStyle = CHAT_CAPTURE_BACKGROUND_COLOR;
+      avatarCaptureContext.fillRect(
+        0,
+        0,
+        avatarCaptureCanvas.width,
+        avatarCaptureCanvas.height
+      );
 
       const myVideoContainer = document.getElementById("my-video");
       if (!myVideoContainer) {
@@ -1440,6 +1459,7 @@ export const useChatStore = defineStore('chat', {
       });
 
       myVideoContainer.prepend(renderer.domElement);
+      myVideoContainer.prepend(avatarCaptureCanvas);
 
       // camera
       const orbitCamera = new THREE.PerspectiveCamera(
@@ -1469,6 +1489,30 @@ export const useChatStore = defineStore('chat', {
       let lastCaptureAt = 0;
       const renderFrameInterval = 1000 / CHAT_RENDER_FPS;
       const captureFrameInterval = 1000 / CHAT_CAPTURE_FPS;
+      const copyAvatarFrameToCaptureCanvas = () => {
+        if (!this.avatarCaptureCanvas || !this.avatarCaptureContext) {
+          return;
+        }
+
+        this.avatarCaptureContext.fillStyle = CHAT_CAPTURE_BACKGROUND_COLOR;
+        this.avatarCaptureContext.fillRect(
+          0,
+          0,
+          this.avatarCaptureCanvas.width,
+          this.avatarCaptureCanvas.height
+        );
+        this.avatarCaptureContext.drawImage(
+          renderer.domElement,
+          0,
+          0,
+          this.avatarCaptureCanvas.width,
+          this.avatarCaptureCanvas.height
+        );
+
+        if (this.avatarCaptureManualFrames) {
+          this.avatarCaptureTrack?.requestFrame?.();
+        }
+      };
 
       const animate = (now = 0) => {
         this.avatarAnimationFrameId = requestAnimationFrame(animate);
@@ -1497,22 +1541,7 @@ export const useChatStore = defineStore('chat', {
           now - lastCaptureAt >= captureFrameInterval
         ) {
           lastCaptureAt = now;
-          this.avatarCaptureContext.clearRect(
-            0,
-            0,
-            this.avatarCaptureCanvas.width,
-            this.avatarCaptureCanvas.height
-          );
-          this.avatarCaptureContext.drawImage(
-            renderer.domElement,
-            0,
-            0,
-            this.avatarCaptureCanvas.width,
-            this.avatarCaptureCanvas.height
-          );
-          if (this.avatarCaptureManualFrames) {
-            this.avatarCaptureTrack?.requestFrame?.();
-          }
+          copyAvatarFrameToCaptureCanvas();
         }
       };
       animate();
@@ -2189,6 +2218,26 @@ export const useChatStore = defineStore('chat', {
       });
       avatarCanvas.style.display = "inline-block";
       const captureCanvas = this.avatarCaptureCanvas || avatarCanvas;
+      if (
+        captureCanvas !== avatarCanvas &&
+        this.avatarCaptureContext &&
+        this.avatarCaptureCanvas
+      ) {
+        this.avatarCaptureContext.fillStyle = CHAT_CAPTURE_BACKGROUND_COLOR;
+        this.avatarCaptureContext.fillRect(
+          0,
+          0,
+          this.avatarCaptureCanvas.width,
+          this.avatarCaptureCanvas.height
+        );
+        this.avatarCaptureContext.drawImage(
+          avatarCanvas,
+          0,
+          0,
+          this.avatarCaptureCanvas.width,
+          this.avatarCaptureCanvas.height
+        );
+      }
 
       const testVideo = await this.waitForDomElement("test-video", { by: "id" });
       this.prepareVideoElement(testVideo);
@@ -2199,11 +2248,16 @@ export const useChatStore = defineStore('chat', {
         const tracks = testVideo.srcObject.getTracks?.() || [];
         tracks.forEach((track) => track.stop());
       }
-      let captureStream = captureCanvas.captureStream(0);
+      const preferTimedCanvasCapture = isAppleTouchDevice();
+      let captureStream = captureCanvas.captureStream(
+        preferTimedCanvasCapture ? CHAT_CAPTURE_FPS : 0
+      );
       let captureTrack = captureStream.getVideoTracks?.()[0] || null;
-      let useManualFrames = typeof captureTrack?.requestFrame === "function";
+      let useManualFrames =
+        !preferTimedCanvasCapture &&
+        typeof captureTrack?.requestFrame === "function";
 
-      if (!useManualFrames) {
+      if (!preferTimedCanvasCapture && !useManualFrames) {
         captureStream.getTracks?.().forEach((track) => track.stop());
         captureStream = captureCanvas.captureStream(CHAT_CAPTURE_FPS);
         captureTrack = captureStream.getVideoTracks?.()[0] || null;
@@ -2211,7 +2265,19 @@ export const useChatStore = defineStore('chat', {
 
       this.avatarCaptureTrack = captureTrack;
       this.avatarCaptureManualFrames = useManualFrames;
+      if (captureTrack) {
+        captureTrack.contentHint = "motion";
+      }
+      if (isAppleTouchDevice()) {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      }
       testVideo.srcObject = captureStream;
+      if (useManualFrames) {
+        this.avatarCaptureTrack?.requestFrame?.();
+      }
+      if (isAppleTouchDevice()) {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      }
       try {
         await testVideo.play();
       } catch (error) {

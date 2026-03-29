@@ -904,7 +904,6 @@ export default {
   box-sizing: border-box;
   border: 0;
   border-radius: 22px;
-  min-height: 144px;
   padding: 28px 24px 24px;
   background: rgba(255, 255, 255, 0.82);
   color: #241936;
@@ -1290,7 +1289,6 @@ export default {
   }
 
   .motion-sheet-option {
-    min-height: 132px;
     padding: 24px 18px 20px;
   }
 
