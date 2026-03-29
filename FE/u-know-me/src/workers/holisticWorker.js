@@ -12,6 +12,7 @@ let tasksVisionModulePromise;
 let tasksVisionFilesetPromise;
 let holisticLandmarker = null;
 let holisticDelegate = "CPU";
+let holisticCanvas = null;
 
 const serializeLandmarks = (landmarks) =>
   Array.isArray(landmarks)
@@ -44,6 +45,7 @@ const loadTasksVisionModule = async () => {
 
 const closeHolisticLandmarker = () => {
   if (!holisticLandmarker) {
+    holisticCanvas = null;
     return;
   }
 
@@ -54,11 +56,35 @@ const closeHolisticLandmarker = () => {
   }
 
   holisticLandmarker = null;
+  holisticCanvas = null;
+};
+
+const createGpuCanvas = (width, height) => {
+  if (typeof OffscreenCanvas === "undefined") {
+    throw new Error("OffscreenCanvas를 지원하지 않아 워커 GPU를 사용할 수 없습니다.");
+  }
+
+  const canvas = new OffscreenCanvas(
+    Math.max(1, Number(width) || 1),
+    Math.max(1, Number(height) || 1)
+  );
+  const context = canvas.getContext("webgl2");
+
+  if (!context) {
+    throw new Error("WebGL2 컨텍스트를 만들 수 없어 워커 GPU를 사용할 수 없습니다.");
+  }
+
+  return canvas;
 };
 
 const initHolisticLandmarker = async (payload = {}) => {
-  const { minConfidence = 0.45, forceRecreate = false, delegate = "CPU" } =
-    payload;
+  const {
+    minConfidence = 0.45,
+    forceRecreate = false,
+    delegate = "CPU",
+    canvasWidth = 1,
+    canvasHeight = 1,
+  } = payload;
 
   if (
     !forceRecreate &&
@@ -80,23 +106,31 @@ const initHolisticLandmarker = async (payload = {}) => {
   }
 
   const wasmFileset = await tasksVisionFilesetPromise;
+  const taskOptions = {
+    baseOptions: {
+      modelAssetPath: HOLISTIC_LANDMARKER_MODEL_URL,
+      delegate,
+    },
+    runningMode: "VIDEO",
+    minFaceDetectionConfidence: minConfidence,
+    minFacePresenceConfidence: minConfidence,
+    minPoseDetectionConfidence: minConfidence,
+    minPosePresenceConfidence: minConfidence,
+    minHandLandmarksConfidence: minConfidence,
+    outputFaceBlendshapes: false,
+    outputPoseSegmentationMasks: false,
+  };
+
+  if (delegate === "GPU") {
+    holisticCanvas = createGpuCanvas(canvasWidth, canvasHeight);
+    taskOptions.canvas = holisticCanvas;
+  } else {
+    holisticCanvas = null;
+  }
 
   holisticLandmarker = await HolisticLandmarker.createFromOptions(
     wasmFileset,
-    {
-      baseOptions: {
-        modelAssetPath: HOLISTIC_LANDMARKER_MODEL_URL,
-        delegate,
-      },
-      runningMode: "VIDEO",
-      minFaceDetectionConfidence: minConfidence,
-      minFacePresenceConfidence: minConfidence,
-      minPoseDetectionConfidence: minConfidence,
-      minPosePresenceConfidence: minConfidence,
-      minHandLandmarksConfidence: minConfidence,
-      outputFaceBlendshapes: false,
-      outputPoseSegmentationMasks: false,
-    }
+    taskOptions
   );
 
   holisticDelegate = delegate;

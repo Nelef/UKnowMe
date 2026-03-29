@@ -56,7 +56,12 @@
           <button
             type="button"
             class="chat-btn-lg motionBtn"
-            @click="chat.motionClick()"
+            :class="{ 'motionBtn-busy': chat.motionProfileSwitching }"
+            aria-haspopup="dialog"
+            :aria-expanded="chat.motionSettingsOpen ? 'true' : 'false'"
+            :aria-disabled="chat.motionProfileSwitching ? 'true' : 'false'"
+            @pointerup.prevent.stop="openMotionSheet"
+            @click.prevent.stop="openMotionSheet"
           >
             <img
               v-if="chat.motionCheck == true"
@@ -162,7 +167,12 @@
             <button
               type="button"
               class="chat-btn-lg-mobile motionBtn"
-              @click="chat.motionClick()"
+              :class="{ 'motionBtn-busy': chat.motionProfileSwitching }"
+              aria-haspopup="dialog"
+              :aria-expanded="chat.motionSettingsOpen ? 'true' : 'false'"
+              :aria-disabled="chat.motionProfileSwitching ? 'true' : 'false'"
+              @pointerup.prevent.stop="openMotionSheet"
+              @click.prevent.stop="openMotionSheet"
             >
               <img
                 v-if="chat.motionCheck == true"
@@ -194,6 +204,80 @@
       </section>
     </div>
   </div>
+
+  <teleport to="body">
+    <transition name="motion-sheet">
+      <div
+        v-if="chat.motionSettingsOpen"
+        class="motion-sheet-backdrop"
+        @click.self="chat.closeMotionSettings()"
+      >
+        <section
+          class="motion-sheet-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label="모션 인식 설정"
+          @click.stop
+        >
+          <header class="motion-sheet-header">
+            <div class="motion-sheet-copy">
+              <strong>모션 인식</strong>
+              <p>현재 기기에서 사용할 방식을 선택하세요.</p>
+            </div>
+          </header>
+
+          <div class="motion-sheet-status">
+            <span class="motion-sheet-status-label">현재 모드</span>
+            <strong>{{ chat.motionProcessingModeLabel }}</strong>
+            <p v-if="motionSettingsHint" class="motion-sheet-status-hint">
+              {{ motionSettingsHint }}
+            </p>
+          </div>
+
+          <div class="motion-sheet-option-list">
+            <button
+              v-for="option in motionProfileOptions"
+              :key="option.value"
+              type="button"
+              class="motion-sheet-option"
+              :class="{
+                'motion-sheet-option-active':
+                  chat.motionRequestedProfile === option.value,
+              }"
+              :disabled="chat.motionProfileSwitching || option.disabled"
+              @click="selectMotionProfile(option.value)"
+            >
+              <div class="motion-sheet-option-main">
+                <div class="motion-sheet-option-copy">
+                  <strong>{{ option.label }}</strong>
+                  <p>{{ option.description }}</p>
+                </div>
+                <span v-if="option.badge" class="motion-sheet-option-badge">
+                  {{ option.badge }}
+                </span>
+              </div>
+              <p
+                v-if="option.disabled && option.disabledReason"
+                class="motion-sheet-option-reason"
+              >
+                {{ option.disabledReason }}
+              </p>
+            </button>
+          </div>
+
+          <footer class="motion-sheet-footer">
+            <button
+              type="button"
+              class="motion-sheet-close"
+              @click="chat.closeMotionSettings()"
+            >
+              닫기
+            </button>
+          </footer>
+        </section>
+      </div>
+    </transition>
+  </teleport>
 </template>
 
 <script>
@@ -208,6 +292,8 @@ export default {
       chatSubResizeObserver: null,
       chatSubResizeFrame: null,
       chatSubWindowResizeHandler: null,
+      lastMotionTriggerAt: 0,
+      lastMotionTriggerType: "",
     };
   },
   setup() {
@@ -215,6 +301,112 @@ export default {
     return {
       chat,
     };
+  },
+  computed: {
+    motionSettingsSelectable() {
+      return (
+        this.chat.ready === true ||
+        this.chat.holisticDelegateStatus === "main-cpu-failed" ||
+        this.chat.holisticDelegateStatus === "worker-unavailable" ||
+        this.chat.holisticDelegateStatus === "worker-cpu-failed" ||
+        this.chat.holisticDelegateStatus === "worker-gpu-failed"
+      );
+    },
+    motionSettingsHint() {
+      if (this.chat.motionProfileSwitching) {
+        return "설정을 적용하고 있습니다.";
+      }
+
+      if (this.chat.holisticDelegateStatus === "worker-unavailable") {
+        return "이 기기에서는 브라우저 + CPU를 사용해 주세요.";
+      }
+
+      if (this.chat.holisticDelegateStatus === "main-cpu-failed") {
+        return "브라우저 + CPU 설정에 실패했습니다. 다른 모드를 선택할 수 있습니다.";
+      }
+
+      if (
+        this.chat.holisticDelegateStatus === "worker-cpu-failed" ||
+        this.chat.holisticDelegateStatus === "worker-gpu-failed"
+      ) {
+        return "이전 시도가 실패했습니다. 다른 모드를 선택할 수 있습니다.";
+      }
+
+      if (!this.motionSettingsSelectable) {
+        return "준비가 끝나면 바로 선택할 수 있습니다.";
+      }
+
+      return "";
+    },
+    motionProfileOptions() {
+      const settingsReady = this.motionSettingsSelectable;
+      const mainSupported =
+        settingsReady && this.chat.supportsHolisticMainThread();
+      const workerSupported =
+        settingsReady && this.chat.supportsHolisticWorker();
+      const workerGpuSupported =
+        settingsReady && this.chat.supportsHolisticWorkerGpu();
+      const mainCpuDisabledReason = !settingsReady
+        ? "아바타 준비가 끝나면 선택할 수 있습니다."
+        : !mainSupported
+        ? "이 브라우저에서는 직접 처리 모드를 사용할 수 없습니다."
+        : "";
+      const workerCpuDisabledReason = !settingsReady
+        ? "아바타 준비가 끝나면 선택할 수 있습니다."
+        : !workerSupported
+        ? "이 기기 브라우저는 워커 실행을 지원하지 않습니다."
+        : "";
+      const workerGpuDisabledReason = !settingsReady
+        ? "아바타 준비가 끝나면 선택할 수 있습니다."
+        : !workerSupported
+        ? "워커를 지원하지 않아 GPU 모드를 사용할 수 없습니다."
+        : !workerGpuSupported
+        ? "OffscreenCanvas 또는 WebGL2를 지원하지 않습니다."
+        : "";
+
+      return [
+        {
+          value: "main-cpu",
+          label: "브라우저 + CPU",
+          description: "워커가 어려운 기기에서 쓰는 호환 모드",
+          badge: "호환",
+          disabled: !settingsReady || !mainSupported,
+          disabledReason: mainCpuDisabledReason,
+        },
+        {
+          value: "worker-cpu",
+          label: "워커 + CPU",
+          description: !settingsReady
+            ? "준비가 끝나면 선택 가능"
+            : workerSupported
+            ? "안정적으로 쓰기 좋은 기본 모드"
+            : "이 기기에서는 사용할 수 없음",
+          badge: "기본",
+          disabled: !settingsReady || !workerSupported,
+          disabledReason: workerCpuDisabledReason,
+        },
+        {
+          value: "worker-gpu",
+          label: "워커 + GPU",
+          description: !settingsReady
+            ? "준비가 끝나면 선택 가능"
+            : workerGpuSupported
+            ? "지원 기기에서 더 가볍게 처리"
+            : "현재 기기에서는 지원하지 않음",
+          badge: "실험",
+          disabled: !settingsReady || !workerGpuSupported,
+          disabledReason: workerGpuDisabledReason,
+        },
+        {
+          value: "off",
+          label: "모션 끄기",
+          description: "지금은 모션 인식을 사용하지 않음",
+          badge: "",
+          disabled: false,
+          disabledReason: "",
+        },
+      ];
+    },
   },
   mounted() {
     this.chatSubWindowResizeHandler = () => {
@@ -306,6 +498,7 @@ export default {
       );
     },
     love() {
+      this.chat.closeMotionSettings();
       if (this.chat.soloMode) {
         this.chat.heartClick();
         return;
@@ -327,9 +520,11 @@ export default {
       }
     },
     openBalanceGame() {
+      this.chat.closeMotionSettings();
       this.chat.balanceClick();
     },
     openAccuseModal() {
+      this.chat.closeMotionSettings();
       if (this.chat.soloMode) {
         this.chat.systemMessagePrint(
           "테스트 세션에서는 신고 기능을 사용할 수 없습니다."
@@ -340,8 +535,29 @@ export default {
       this.chat.accuseBtn = 1;
     },
     chatSubMobileClick() {
+      this.chat.closeMotionSettings();
       this.chatExpand = !this.chatExpand;
       this.scheduleChatSubSpacerSync();
+    },
+    openMotionSheet(event) {
+      const now =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      const eventType = event?.type || "manual";
+
+      if (
+        eventType === "click" &&
+        now - this.lastMotionTriggerAt < 450 &&
+        this.lastMotionTriggerType === "pointerup"
+      ) {
+        return;
+      }
+
+      this.lastMotionTriggerAt = now;
+      this.lastMotionTriggerType = eventType;
+      this.chat.motionClick();
+    },
+    async selectMotionProfile(profile) {
+      await this.chat.applyMotionProcessingProfile(profile);
     },
   },
 };
@@ -351,6 +567,8 @@ export default {
 /* 전역변수 */
 :root {
   --chat-sub-size: 200px;
+  --chat-action-width-desktop: 190px;
+  --chat-action-width-mobile: clamp(124px, 28vw, 150px);
 }
 
 .chat-sub-spacer {
@@ -449,11 +667,13 @@ export default {
 .option {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 14px;
+  width: var(--chat-action-width-desktop);
 }
 
 .option-mobile {
-  width: 100%;
+  width: var(--chat-action-width-mobile);
 }
 
 .option-mobile-end {
@@ -468,16 +688,21 @@ export default {
 .chat-btn-lg-mobile {
   border: 0;
   outline: 0;
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
   box-shadow: 0px 2.72109px 2.72109px rgba(0, 0, 0, 0.25);
   border-radius: 20px;
   background-color: #ebdcfe;
   color: #2a2140;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
   transition: background-color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
 }
 
 .chat-btn-lg {
-  width: 190px;
+  width: 100%;
   min-height: 60px;
   padding: 10px 15px;
   display: flex;
@@ -487,7 +712,7 @@ export default {
 }
 
 .chat-btn-lg-mobile {
-  width: min(100%, 150px);
+  width: 100%;
   min-height: 96px;
   padding: 12px 14px;
   display: flex;
@@ -531,6 +756,16 @@ export default {
   gap: 2px;
 }
 
+.motionBtn {
+  position: relative;
+  z-index: 1;
+}
+
+.motionBtn-busy {
+  opacity: 0.72;
+  cursor: progress;
+}
+
 .motion-mode-label {
   display: block;
   font-size: 11px;
@@ -538,6 +773,9 @@ export default {
   font-weight: 600;
   letter-spacing: 0.02em;
   color: rgba(42, 33, 64, 0.72);
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .chat-btn-lg .chat-btn-copy {
@@ -555,6 +793,262 @@ export default {
   width: 40px;
   height: 40px;
   object-fit: contain;
+}
+
+.motion-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.3), transparent 42%),
+    rgba(24, 15, 41, 0.36);
+  backdrop-filter: blur(18px);
+}
+
+.motion-sheet-panel {
+  width: min(100%, 560px);
+  max-height: min(86dvh, 780px);
+  padding: 28px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background:
+    linear-gradient(160deg, rgba(255, 248, 255, 0.98), rgba(237, 225, 255, 0.95));
+  box-shadow: 0px 22px 60px rgba(34, 20, 58, 0.24);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow: hidden;
+}
+
+.motion-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.motion-sheet-copy {
+  min-width: 0;
+}
+
+.motion-sheet-copy strong {
+  display: block;
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1.1;
+  color: #241936;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.motion-sheet-copy p {
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(36, 25, 54, 0.72);
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.motion-sheet-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(89, 55, 139, 0.12);
+  color: #3c2859;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  flex-shrink: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.motion-sheet-close:hover {
+  background: rgba(89, 55, 139, 0.18);
+  transform: translateY(-1px);
+}
+
+.motion-sheet-status {
+  padding: 18px 18px 16px;
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(235, 220, 254, 0.94));
+  border: 1px solid rgba(134, 92, 195, 0.16);
+}
+
+.motion-sheet-status-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(60, 40, 89, 0.56);
+}
+
+.motion-sheet-status strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.2;
+  color: #241936;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.motion-sheet-status-hint {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(36, 25, 54, 0.72);
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.motion-sheet-option-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  align-items: stretch;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.motion-sheet-option {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 22px;
+  min-height: 0;
+  padding: 24px 22px 20px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #241936;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: inset 0 0 0 1px rgba(134, 92, 195, 0.08);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.motion-sheet-option:hover {
+  transform: translateY(-1px);
+  background: rgba(243, 233, 255, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(134, 92, 195, 0.16);
+}
+
+.motion-sheet-option:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.motion-sheet-option-active {
+  background: linear-gradient(135deg, #f1e2ff, #e2c9ff);
+  box-shadow:
+    inset 0 0 0 1px rgba(111, 64, 174, 0.22),
+    0px 10px 24px rgba(102, 64, 155, 0.12);
+}
+
+.motion-sheet-option-main {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.motion-sheet-option-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.motion-sheet-option-copy strong {
+  font-size: 19px;
+  font-weight: 900;
+  line-height: 1.2;
+  min-width: 0;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.motion-sheet-option-copy p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(36, 25, 54, 0.72);
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.motion-sheet-option-badge {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(74, 45, 116, 0.1);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #52307d;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.motion-sheet-option-reason {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(111, 64, 174, 0.12);
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(82, 48, 125, 0.82);
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.motion-sheet-footer {
+  margin-top: auto;
+  padding-top: 2px;
+}
+
+.motion-sheet-footer .motion-sheet-close {
+  width: 100%;
+}
+
+.motion-sheet-enter-active,
+.motion-sheet-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.motion-sheet-enter-from,
+.motion-sheet-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }
 
 .keyword-box {
@@ -751,6 +1245,18 @@ export default {
   :root {
     --chat-sub-size: 400px;
   }
+
+  .motion-sheet-backdrop {
+    align-items: end;
+    padding: 16px;
+  }
+
+  .motion-sheet-panel {
+    width: min(100%, 520px);
+    max-height: min(88dvh, 760px);
+    padding: 24px 20px 18px;
+    border-radius: 26px;
+  }
 }
 
 @media screen and (max-width: 760px) {
@@ -771,7 +1277,6 @@ export default {
   }
 
   .chat-btn-lg-mobile {
-    width: min(100%, 132px);
     min-height: 90px;
   }
 
@@ -785,6 +1290,51 @@ export default {
 
   .keyword-content-mobile {
     margin: 14px 16px;
+  }
+
+  .motion-sheet-backdrop {
+    padding: 12px;
+  }
+
+  .motion-sheet-panel {
+    width: 100%;
+    max-height: min(88dvh, 720px);
+    padding: 22px 16px 16px;
+    border-radius: 24px;
+    gap: 14px;
+  }
+
+  .motion-sheet-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .motion-sheet-copy strong {
+    font-size: 21px;
+  }
+
+  .motion-sheet-close {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .motion-sheet-status strong {
+    font-size: 19px;
+  }
+
+  .motion-sheet-option {
+    min-height: 0;
+    padding: 20px 16px 16px;
+  }
+
+  .motion-sheet-option-main {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .motion-sheet-option-copy {
+    width: 100%;
   }
 }
 </style>
