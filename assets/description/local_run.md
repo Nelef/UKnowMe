@@ -147,6 +147,14 @@ npm run serve
 
 브라우저에서 `http://localhost:3000` 으로 접속하면 됩니다.
 
+iPhone 등 다른 기기에서 HTTPS로 임시 접속해야 한다면 아래처럼 Cloudflare 터널을 열면 됩니다.
+
+```powershell
+cloudflared tunnel --url http://localhost:3000
+```
+
+명령 실행 후 출력되는 `https://...trycloudflare.com` 주소로 접속하면 됩니다.
+
 ## 참고
 
 - 소셜 로그인 콜백은 로컬 기준으로 백엔드 `http://localhost:8080/member/oauth2/code/{provider}` 를 사용합니다.

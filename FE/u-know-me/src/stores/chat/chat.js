@@ -68,6 +68,56 @@ const getChatAvatarRenderSize = () =>
 const getChatRenderPixelRatio = () =>
   isAppleTouchDevice() ? 0.9 : CHAT_RENDER_PIXEL_RATIO;
 
+const getDefaultHolisticProcessingMode = () => {
+  if (isAppleTouchDevice()) {
+    return "main-gpu";
+  }
+
+  return (
+    typeof Worker !== "undefined" &&
+    typeof createImageBitmap === "function"
+  )
+    ? "worker-cpu"
+    : "main-cpu";
+};
+
+const formatHolisticProcessingModeLabel = (mode) => {
+  switch (mode) {
+    case "worker-cpu":
+      return "워커 · CPU";
+    case "main-gpu":
+      return "메인 · GPU";
+    case "main-cpu":
+    default:
+      return "메인 · CPU";
+  }
+};
+
+const getHolisticProcessingModeLabel = ({
+  status = "",
+  requestedDelegate = "",
+} = {}) => {
+  switch (status) {
+    case "worker-cpu-active":
+      return formatHolisticProcessingModeLabel("worker-cpu");
+    case "gpu-active":
+      return formatHolisticProcessingModeLabel("main-gpu");
+    case "cpu-active":
+    case "worker-fallback-main":
+    case "gpu-tracking-fallback":
+    case "gpu-init-failed":
+      return formatHolisticProcessingModeLabel("main-cpu");
+    default:
+      if (requestedDelegate === "GPU") {
+        return formatHolisticProcessingModeLabel("main-gpu");
+      }
+      if (requestedDelegate === "CPU" && getDefaultHolisticProcessingMode() === "main-cpu") {
+        return formatHolisticProcessingModeLabel("main-cpu");
+      }
+      return formatHolisticProcessingModeLabel(getDefaultHolisticProcessingMode());
+  }
+};
+
 const loadTasksVisionModule = async () => {
   if (!tasksVisionModulePromise) {
     tasksVisionModulePromise = import(
@@ -126,7 +176,12 @@ export const useChatStore = defineStore('chat', {
     debugMessages: [],
   }),
   getters: {
-
+    motionProcessingModeLabel(state) {
+      return getHolisticProcessingModeLabel({
+        status: state.holisticDelegateStatus,
+        requestedDelegate: state.holisticRequestedDelegate,
+      });
+    },
   },
   actions: {
     logDebug(stage, details = {}) {
@@ -701,15 +756,24 @@ export const useChatStore = defineStore('chat', {
       this.setElementDisplay(debugPreview, debugEnabled ? "block" : "none");
     },
     getPreferredHolisticDelegate() {
-      return "CPU";
+      return isAppleTouchDevice() ? "GPU" : "CPU";
     },
-    resolveHolisticDelegate() {
-      return "CPU";
+    resolveHolisticDelegate(delegate = this.getPreferredHolisticDelegate()) {
+      return delegate === "GPU" ? "GPU" : "CPU";
     },
     supportsHolisticWorker() {
       return (
         typeof Worker !== "undefined" &&
         typeof createImageBitmap === "function"
+      );
+    },
+    shouldPreferMainThreadHolistic() {
+      return isAppleTouchDevice();
+    },
+    canUseHolisticWorker() {
+      return (
+        !this.shouldPreferMainThreadHolistic() &&
+        this.supportsHolisticWorker()
       );
     },
     isHolisticWorkerActive() {
@@ -839,6 +903,8 @@ export const useChatStore = defineStore('chat', {
     ) {
       const { forceRecreate = false, preferMainThread = false } = options;
       const resolvedRequestedDelegate = this.resolveHolisticDelegate(delegate);
+      const shouldUseWorker =
+        !preferMainThread && this.canUseHolisticWorker();
       this.holisticRequestedDelegate = delegate;
       this.logDebug("ensureHolisticLandmarker:start", {
         requestedDelegate: delegate,
@@ -846,9 +912,10 @@ export const useChatStore = defineStore('chat', {
         hasCanvas: Boolean(canvas),
         forceRecreate,
         preferMainThread,
+        shouldUseWorker,
       });
 
-      if (!preferMainThread && this.supportsHolisticWorker()) {
+      if (shouldUseWorker) {
         if (!forceRecreate && this.isHolisticWorkerActive()) {
           this.logDebug("ensureHolisticLandmarker:reuseWorker");
           return null;
@@ -911,8 +978,8 @@ export const useChatStore = defineStore('chat', {
         this.holistic = null;
       }
 
-      this.loadingText = `모션 인식을 준비하고 있습니다.<br>${delegate}`;
-      this.setLoadingState(delegate === "GPU" ? 45 : 55);
+      this.loadingText = `모션 인식을 준비하고 있습니다.<br>${resolvedRequestedDelegate}`;
+      this.setLoadingState(resolvedRequestedDelegate === "GPU" ? 45 : 55);
 
       this.logDebug("ensureHolisticLandmarker:moduleImport");
       const { FilesetResolver, HolisticLandmarker } = await loadTasksVisionModule();
@@ -965,7 +1032,8 @@ export const useChatStore = defineStore('chat', {
       });
 
       this.holisticDelegate = resolvedDelegate;
-      this.holisticDelegateStatus = "cpu-active";
+      this.holisticDelegateStatus =
+        resolvedDelegate === "GPU" ? "gpu-active" : "cpu-active";
       this.holisticFallbackAttempted = resolvedDelegate === "CPU";
       this.holisticEmptyFaceFrames = 0;
       this.holisticFrameInFlight = false;
@@ -1679,13 +1747,21 @@ export const useChatStore = defineStore('chat', {
         }
       };
       const preferredDelegate = this.getPreferredHolisticDelegate();
+      const preferMainThread = this.shouldPreferMainThreadHolistic();
       this.logDebug("startHolistic:preferredDelegate", {
         preferredDelegate,
-        processingMode: "worker-first",
+        processingMode:
+          preferMainThread && preferredDelegate === "GPU"
+            ? "main-thread-gpu"
+            : preferMainThread
+              ? "main-thread-cpu"
+              : "worker-first",
       });
 
       try {
-        await this.ensureHolisticLandmarker(preferredDelegate, guideCanvas);
+        await this.ensureHolisticLandmarker(preferredDelegate, guideCanvas, {
+          preferMainThread,
+        });
       } catch (error) {
         if (preferredDelegate === "GPU") {
           console.warn("GPU HolisticLandmarker 초기화에 실패해 CPU delegate로 재시도합니다.", error);

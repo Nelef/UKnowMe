@@ -68,7 +68,12 @@
               src="@/assets/chat/option-off-img.png"
               alt=""
             />
-            <div>모션 인식</div>
+            <div class="chat-btn-copy">
+              <span>모션 인식</span>
+              <small class="motion-mode-label">
+                {{ chat.motionProcessingModeLabel }}
+              </small>
+            </div>
           </button>
           <button type="button" class="chat-btn-lg" @click="chat.leaveSession()">
             <img src="@/assets/chat/exit-img.png" alt="" />
@@ -169,7 +174,12 @@
                 src="@/assets/chat/option-off-img.png"
                 alt=""
               />
-              <div>모션 인식</div>
+              <div class="chat-btn-copy">
+                <span>모션 인식</span>
+                <small class="motion-mode-label">
+                  {{ chat.motionProcessingModeLabel }}
+                </small>
+              </div>
             </button>
             <button
               type="button"
@@ -513,6 +523,33 @@ export default {
   flex: 1 1 auto;
 }
 
+.chat-btn-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: inherit;
+  justify-content: center;
+  gap: 2px;
+}
+
+.motion-mode-label {
+  display: block;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(42, 33, 64, 0.72);
+}
+
+.chat-btn-lg .chat-btn-copy {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.chat-btn-lg-mobile .chat-btn-copy {
+  align-items: center;
+  text-align: center;
+}
+
 .chat-btn-lg img,
 .chat-btn-lg-mobile img {
   width: 40px;
@@ -740,6 +777,10 @@ export default {
 
   .chat-btn-lg-mobile div {
     font-size: 16px;
+  }
+
+  .motion-mode-label {
+    font-size: 10px;
   }
 
   .keyword-content-mobile {

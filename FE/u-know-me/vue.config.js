@@ -8,6 +8,7 @@ module.exports = defineConfig({
   transpileDependencies: true,
   productionSourceMap: false,
   devServer: {
+    allowedHosts: 'all',
     // Avoid colliding with backend WebSocket endpoints proxied under `/ws`.
     client: {
       webSocketURL: {
