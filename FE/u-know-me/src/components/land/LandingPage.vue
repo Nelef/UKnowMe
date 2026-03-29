@@ -14,8 +14,8 @@
     </video>
     <img class="landing-text" src="@/assets/land/landing-text.png" alt="landing-text">
     <div class="avatar">
-      <img class="me" src="@/assets/land/character_woman.png" alt="me">
-      <img class="you-know" src="@/assets/land/character_man.png" alt="you-know">
+      <img class="me" src="@/assets/land/character_woman.webp" alt="me">
+      <img class="you-know" src="@/assets/land/character_man.webp" alt="you-know">
     </div>
   </div>
   <cite class="img-cite">&copy; The Jazz Hop Café</cite>
