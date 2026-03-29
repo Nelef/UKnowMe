@@ -226,13 +226,9 @@
             </div>
           </header>
 
-          <div class="motion-sheet-status">
-            <span class="motion-sheet-status-label">현재 모드</span>
-            <strong>{{ chat.motionProcessingModeLabel }}</strong>
-            <p v-if="motionSettingsHint" class="motion-sheet-status-hint">
-              {{ motionSettingsHint }}
-            </p>
-          </div>
+          <p v-if="motionSettingsHint" class="motion-sheet-note">
+            {{ motionSettingsHint }}
+          </p>
 
           <div class="motion-sheet-option-list">
             <button
@@ -855,6 +851,20 @@ export default {
   overflow-wrap: anywhere;
 }
 
+.motion-sheet-note {
+  margin: -2px 0 2px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(134, 92, 195, 0.14);
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(60, 40, 89, 0.78);
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
 .motion-sheet-close {
   display: inline-flex;
   align-items: center;
@@ -878,45 +888,6 @@ export default {
   transform: translateY(-1px);
 }
 
-.motion-sheet-status {
-  padding: 18px 18px 16px;
-  border-radius: 22px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(235, 220, 254, 0.94));
-  border: 1px solid rgba(134, 92, 195, 0.16);
-}
-
-.motion-sheet-status-label {
-  display: block;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(60, 40, 89, 0.56);
-}
-
-.motion-sheet-status strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 22px;
-  font-weight: 900;
-  line-height: 1.2;
-  color: #241936;
-  white-space: normal;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
-}
-
-.motion-sheet-status-hint {
-  margin: 10px 0 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: rgba(36, 25, 54, 0.72);
-  white-space: normal;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
-}
-
 .motion-sheet-option-list {
   display: flex;
   flex-direction: column;
@@ -933,8 +904,8 @@ export default {
   box-sizing: border-box;
   border: 0;
   border-radius: 22px;
-  min-height: 0;
-  padding: 24px 22px 20px;
+  min-height: 144px;
+  padding: 28px 24px 24px;
   background: rgba(255, 255, 255, 0.82);
   color: #241936;
   text-align: left;
@@ -1318,13 +1289,9 @@ export default {
     justify-content: center;
   }
 
-  .motion-sheet-status strong {
-    font-size: 19px;
-  }
-
   .motion-sheet-option {
-    min-height: 0;
-    padding: 20px 16px 16px;
+    min-height: 132px;
+    padding: 24px 18px 20px;
   }
 
   .motion-sheet-option-main {

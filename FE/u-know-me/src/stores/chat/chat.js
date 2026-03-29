@@ -297,6 +297,8 @@ export const useChatStore = defineStore('chat', {
     avatarAnimationFrameId: null,
     avatarCaptureCanvas: null,
     avatarCaptureContext: null,
+    avatarCaptureTrack: null,
+    avatarCaptureManualFrames: false,
     SessionName: "SessionA",
     otherPeople: [],
     motionCheck:
@@ -521,6 +523,15 @@ export const useChatStore = defineStore('chat', {
       }
       this.avatarCaptureCanvas = null;
       this.avatarCaptureContext = null;
+      if (this.avatarCaptureTrack) {
+        try {
+          this.avatarCaptureTrack.stop();
+        } catch (error) {
+          console.warn("아바타 캡처 트랙 종료 중 오류가 발생했습니다.", error);
+        }
+        this.avatarCaptureTrack = null;
+      }
+      this.avatarCaptureManualFrames = false;
 
       if (closeHolistic && this.holistic) {
         try {
@@ -1418,7 +1429,6 @@ export const useChatStore = defineStore('chat', {
       avatarCaptureCanvas.height = avatarRenderSize.height;
       const avatarCaptureContext = avatarCaptureCanvas.getContext("2d", {
         alpha: false,
-        desynchronized: true,
       });
 
       const myVideoContainer = document.getElementById("my-video");
@@ -1444,6 +1454,8 @@ export const useChatStore = defineStore('chat', {
       this.avatarOrbitControls = null;
       this.avatarCaptureCanvas = markRaw(avatarCaptureCanvas);
       this.avatarCaptureContext = markRaw(avatarCaptureContext);
+      this.avatarCaptureTrack = null;
+      this.avatarCaptureManualFrames = false;
 
       // light
       const light = new THREE.DirectionalLight(0xffffff);
@@ -1498,6 +1510,9 @@ export const useChatStore = defineStore('chat', {
             this.avatarCaptureCanvas.width,
             this.avatarCaptureCanvas.height
           );
+          if (this.avatarCaptureManualFrames) {
+            this.avatarCaptureTrack?.requestFrame?.();
+          }
         }
       };
       animate();
@@ -2184,7 +2199,19 @@ export const useChatStore = defineStore('chat', {
         const tracks = testVideo.srcObject.getTracks?.() || [];
         tracks.forEach((track) => track.stop());
       }
-      testVideo.srcObject = captureCanvas.captureStream(CHAT_CAPTURE_FPS);
+      let captureStream = captureCanvas.captureStream(0);
+      let captureTrack = captureStream.getVideoTracks?.()[0] || null;
+      let useManualFrames = typeof captureTrack?.requestFrame === "function";
+
+      if (!useManualFrames) {
+        captureStream.getTracks?.().forEach((track) => track.stop());
+        captureStream = captureCanvas.captureStream(CHAT_CAPTURE_FPS);
+        captureTrack = captureStream.getVideoTracks?.()[0] || null;
+      }
+
+      this.avatarCaptureTrack = captureTrack;
+      this.avatarCaptureManualFrames = useManualFrames;
+      testVideo.srcObject = captureStream;
       try {
         await testVideo.play();
       } catch (error) {
@@ -2194,10 +2221,11 @@ export const useChatStore = defineStore('chat', {
         captureCanvasTag: captureCanvas?.tagName || "canvas",
         captureCanvasWidth: captureCanvas?.width || 0,
         captureCanvasHeight: captureCanvas?.height || 0,
+        captureManualFrames: useManualFrames,
         trackCount: testVideo.srcObject?.getVideoTracks?.().length || 0,
       });
 
-      var avatarVideo = testVideo.srcObject.getVideoTracks()[0];
+      var avatarVideo = captureTrack || testVideo.srcObject.getVideoTracks()[0];
 
       console.log("4. Holistic 로드 완료");
       this.setLoadingState(85, "모션 인식 준비가 완료되었습니다.");
