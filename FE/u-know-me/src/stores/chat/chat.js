@@ -16,6 +16,7 @@ import axios from 'axios'
 let currentVrm;
 let tasksVisionFilesetPromise;
 let tasksVisionModulePromise;
+let legacyHolisticModulePromise;
 let trackingPreviewElementsCache = null;
 let holisticWorkerInstance = null;
 let holisticWorkerRequestSeq = 0;
@@ -29,6 +30,7 @@ const TASKS_VISION_MODULE_URL = buildPublicAssetUrl("mediapipe/vision_bundle.mjs
 const HOLISTIC_LANDMARKER_MODEL_URL = buildPublicAssetUrl(
   "mediapipe/models/holistic_landmarker.task"
 );
+const LEGACY_HOLISTIC_ASSET_URL = buildPublicAssetUrl("mediapipe/holistic");
 const CHAT_RENDER_PIXEL_RATIO = 1;
 const CHAT_RENDER_FPS = 60;
 const CHAT_CAPTURE_FPS = 24;
@@ -96,12 +98,17 @@ const HOLISTIC_PROCESSING_PROFILE = Object.freeze({
   WORKER_CPU: "worker-cpu",
   WORKER_GPU: "worker-gpu",
 });
+const HOLISTIC_RUNTIME_KIND = Object.freeze({
+  TASKS: "tasks",
+  LEGACY_SAFARI: "legacy-safari",
+});
 
 const supportsHolisticMainThreadRuntime = () =>
   typeof window !== "undefined" &&
   typeof document !== "undefined";
 
 const supportsHolisticWorkerRuntime = () =>
+  !isIOSSafariBrowser() &&
   typeof Worker !== "undefined" &&
   typeof createImageBitmap === "function";
 
@@ -130,6 +137,9 @@ const isHolisticWorkerProfile = (profile) => {
 const isHolisticMainThreadProfile = (profile) =>
   normalizeHolisticProcessingProfile(profile) ===
   HOLISTIC_PROCESSING_PROFILE.MAIN_CPU;
+
+const shouldUseLegacySafariHolisticRuntime = (profile) =>
+  isIOSSafariBrowser() && isHolisticMainThreadProfile(profile);
 
 const supportsHolisticProcessingProfile = (profile) => {
   const normalizedProfile = normalizeHolisticProcessingProfile(profile);
@@ -223,6 +233,14 @@ const loadTasksVisionModule = async () => {
   return tasksVisionModulePromise;
 };
 
+const loadLegacyHolisticModule = async () => {
+  if (!legacyHolisticModulePromise) {
+    legacyHolisticModulePromise = import("@mediapipe/holistic");
+  }
+
+  return legacyHolisticModulePromise;
+};
+
 const getHolisticProcessingModeLabel = ({
   status = "",
   requestedProfile = getDefaultHolisticProcessingProfile(),
@@ -304,6 +322,7 @@ export const useChatStore = defineStore('chat', {
     localAudioTrack: null,
     camera: null,
     holistic: null,
+    holisticRuntimeKind: "",
     holisticDelegate: '',
     holisticDelegateStatus: '',
     motionRequestedProfile: getDefaultHolisticProcessingProfile(),
@@ -459,6 +478,7 @@ export const useChatStore = defineStore('chat', {
       this.motionAppliedProfile = "";
       this.motionSettingsOpen = false;
       this.motionProfileSwitching = false;
+      this.holisticRuntimeKind = "";
       this.motionCheck =
         this.motionRequestedProfile !== HOLISTIC_PROCESSING_PROFILE.OFF;
       this.refreshTrackingDebugPreviewFlag();
@@ -564,7 +584,12 @@ export const useChatStore = defineStore('chat', {
 
       if (closeHolistic && this.holistic) {
         try {
-          this.holistic.close();
+          const closeResult = this.holistic.close();
+          if (closeResult?.catch) {
+            closeResult.catch((error) => {
+              console.warn("Holistic 종료 중 오류가 발생했습니다.", error);
+            });
+          }
         } catch (error) {
           console.warn("Holistic 종료 중 오류가 발생했습니다.", error);
         }
@@ -575,6 +600,7 @@ export const useChatStore = defineStore('chat', {
       }
       this.holisticDelegate = '';
       this.holisticDelegateStatus = '';
+      this.holisticRuntimeKind = '';
       this.motionAppliedProfile = '';
       this.motionSettingsOpen = false;
       this.motionProfileSwitching = false;
@@ -1012,12 +1038,18 @@ export const useChatStore = defineStore('chat', {
       }
 
       try {
-        this.holistic.close();
+        const closeResult = this.holistic.close();
+        if (closeResult?.catch) {
+          closeResult.catch((error) => {
+            console.warn("메인 스레드 Holistic 종료 중 오류가 발생했습니다.", error);
+          });
+        }
       } catch (error) {
         console.warn("메인 스레드 Holistic 종료 중 오류가 발생했습니다.", error);
       }
 
       this.holistic = null;
+      this.holisticRuntimeKind = "";
     },
     disposeHolisticRuntime(reason = "") {
       this.closeHolisticMainThread(reason);
@@ -1277,6 +1309,13 @@ export const useChatStore = defineStore('chat', {
       const resolvedProfile = normalizeHolisticProcessingProfile(profile);
       const resolvedDelegate = getHolisticDelegateForProfile(resolvedProfile);
       const shouldUseWorker = isHolisticWorkerProfile(resolvedProfile);
+      const shouldUseLegacySafariHolistic =
+        shouldUseLegacySafariHolisticRuntime(resolvedProfile);
+      const expectedRuntimeKind = shouldUseWorker
+        ? ""
+        : shouldUseLegacySafariHolistic
+        ? HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI
+        : HOLISTIC_RUNTIME_KIND.TASKS;
       const canUseRequestedRuntime = shouldUseWorker
         ? this.canUseHolisticWorker()
         : this.canUseHolisticMainThread();
@@ -1286,6 +1325,7 @@ export const useChatStore = defineStore('chat', {
         hasCanvas: Boolean(canvas),
         forceRecreate,
         shouldUseWorker,
+        expectedRuntimeKind,
         canUseRequestedRuntime,
       });
 
@@ -1321,6 +1361,7 @@ export const useChatStore = defineStore('chat', {
         ((shouldUseWorker && this.isHolisticWorkerActive()) ||
           (!shouldUseWorker && this.isHolisticMainThreadActive())) &&
         this.motionAppliedProfile === resolvedProfile &&
+        this.holisticRuntimeKind === expectedRuntimeKind &&
         this.holisticDelegateStatus ===
           getHolisticActiveStatusForProfile(resolvedProfile)
       ) {
@@ -1335,41 +1376,65 @@ export const useChatStore = defineStore('chat', {
       this.disposeHolisticRuntime("profile-recreate");
 
       if (!shouldUseWorker) {
-        this.loadingText = "브라우저에서 모션 인식을 준비하고 있습니다.";
+        this.loadingText = shouldUseLegacySafariHolistic
+          ? "Safari 호환 모션 인식을 준비하고 있습니다."
+          : "브라우저에서 모션 인식을 준비하고 있습니다.";
         this.setLoadingState(55);
 
         try {
-          const { FilesetResolver, HolisticLandmarker } =
-            await loadTasksVisionModule();
+          if (shouldUseLegacySafariHolistic) {
+            const { Holistic } = await loadLegacyHolisticModule();
+            const holistic = new Holistic({
+              locateFile: (file) => `${LEGACY_HOLISTIC_ASSET_URL}/${file}`,
+            });
 
-          if (!tasksVisionFilesetPromise) {
-            tasksVisionFilesetPromise = FilesetResolver.forVisionTasks(
-              TASKS_VISION_WASM_URL
+            holistic.setOptions({
+              selfieMode: true,
+              modelComplexity: 1,
+              smoothLandmarks: true,
+              enableSegmentation: false,
+              smoothSegmentation: false,
+              refineFaceLandmarks: true,
+              minDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+              minTrackingConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+            });
+            await holistic.initialize();
+            this.holistic = markRaw(holistic);
+            this.holisticRuntimeKind = HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI;
+          } else {
+            const { FilesetResolver, HolisticLandmarker } =
+              await loadTasksVisionModule();
+
+            if (!tasksVisionFilesetPromise) {
+              tasksVisionFilesetPromise = FilesetResolver.forVisionTasks(
+                TASKS_VISION_WASM_URL
+              );
+            }
+
+            const wasmFileset = await tasksVisionFilesetPromise;
+            const taskOptions = {
+              baseOptions: {
+                modelAssetPath: HOLISTIC_LANDMARKER_MODEL_URL,
+                delegate: resolvedDelegate,
+              },
+              runningMode: "VIDEO",
+              minFaceDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+              minFacePresenceConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+              minPoseDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+              minPosePresenceConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+              minHandLandmarksConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+              outputFaceBlendshapes: false,
+              outputPoseSegmentationMasks: false,
+            };
+
+            this.holistic = markRaw(
+              await HolisticLandmarker.createFromOptions(
+                wasmFileset,
+                taskOptions
+              )
             );
+            this.holisticRuntimeKind = HOLISTIC_RUNTIME_KIND.TASKS;
           }
-
-          const wasmFileset = await tasksVisionFilesetPromise;
-          const taskOptions = {
-            baseOptions: {
-              modelAssetPath: HOLISTIC_LANDMARKER_MODEL_URL,
-              delegate: resolvedDelegate,
-            },
-            runningMode: "VIDEO",
-            minFaceDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-            minFacePresenceConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-            minPoseDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-            minPosePresenceConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-            minHandLandmarksConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-            outputFaceBlendshapes: false,
-            outputPoseSegmentationMasks: false,
-          };
-
-          this.holistic = markRaw(
-            await HolisticLandmarker.createFromOptions(
-              wasmFileset,
-              taskOptions
-            )
-          );
           this.holisticDelegate = resolvedDelegate;
           this.holisticDelegateStatus =
             getHolisticActiveStatusForProfile(resolvedProfile);
@@ -1381,12 +1446,14 @@ export const useChatStore = defineStore('chat', {
           this.logDebug("ensureHolisticLandmarker:mainReady", {
             resolvedProfile,
             resolvedDelegate,
+            runtimeKind: this.holisticRuntimeKind,
           });
           return this.holistic;
         } catch (error) {
           console.warn("브라우저 직접 처리 초기화에 실패했습니다.", error);
           this.closeHolisticMainThread("main-init-failed");
           this.holisticDelegate = "";
+          this.holisticRuntimeKind = "";
           this.motionAppliedProfile = "";
           this.holisticDelegateStatus =
             getHolisticFailureStatusForProfile(resolvedProfile);
@@ -1411,6 +1478,7 @@ export const useChatStore = defineStore('chat', {
         this.holisticDelegate = resolvedDelegate;
         this.holisticDelegateStatus =
           getHolisticActiveStatusForProfile(resolvedProfile);
+        this.holisticRuntimeKind = "";
         this.motionAppliedProfile = resolvedProfile;
         this.holisticEmptyFaceFrames = 0;
         this.holisticFrameInFlight = false;
@@ -1422,6 +1490,7 @@ export const useChatStore = defineStore('chat', {
         console.warn("Holistic worker 초기화에 실패했습니다.", error);
         this.destroyHolisticWorker("worker-init-failed");
         this.holisticDelegate = "";
+        this.holisticRuntimeKind = "";
         this.motionAppliedProfile = "";
         this.holisticDelegateStatus =
           getHolisticFailureStatusForProfile(resolvedProfile);
@@ -1854,10 +1923,11 @@ export const useChatStore = defineStore('chat', {
       };
 
       /* VRM Character Animator */
-      const animateVRM = (vrm, results) => {
+      const animateVRM = (vrm, results, options = {}) => {
         if (!vrm) {
           return;
         }
+        const { disableHands = false } = options;
         // Take the results from `Holistic` and animate character based on its Face, Pose, and Hand Keypoints.
         let riggedPose, riggedLeftHand, riggedRightHand, riggedFace;
 
@@ -1913,6 +1983,10 @@ export const useChatStore = defineStore('chat', {
           rigRotation("LeftLowerLeg", riggedPose.LeftLowerLeg, 1, 0.3);
           rigRotation("RightUpperLeg", riggedPose.RightUpperLeg, 1, 0.3);
           rigRotation("RightLowerLeg", riggedPose.RightLowerLeg, 1, 0.3);
+        }
+
+        if (disableHands) {
+          return;
         }
 
         // Animate Hands
@@ -1984,23 +2058,31 @@ export const useChatStore = defineStore('chat', {
         guideCanvasClass: "tracking-primary-canvas",
       });
 
-      const normalizeHolisticResult = (result) => ({
-        faceLandmarks: Array.isArray(result?.faceLandmarks?.[0])
-          ? result.faceLandmarks[0]
-          : result?.faceLandmarks || null,
-        poseLandmarks: Array.isArray(result?.poseLandmarks?.[0])
-          ? result.poseLandmarks[0]
-          : result?.poseLandmarks || null,
-        ea: Array.isArray(result?.poseWorldLandmarks?.[0])
-          ? result.poseWorldLandmarks[0]
-          : result?.poseWorldLandmarks || result?.ea || null,
-        leftHandLandmarks: Array.isArray(result?.leftHandLandmarks?.[0])
-          ? result.leftHandLandmarks[0]
-          : result?.leftHandLandmarks || null,
-        rightHandLandmarks: Array.isArray(result?.rightHandLandmarks?.[0])
-          ? result.rightHandLandmarks[0]
-          : result?.rightHandLandmarks || null,
-      });
+      const normalizeHolisticResult = (result, options = {}) => {
+        const { disableHands = false } = options;
+
+        return {
+          faceLandmarks: Array.isArray(result?.faceLandmarks?.[0])
+            ? result.faceLandmarks[0]
+            : result?.faceLandmarks || null,
+          poseLandmarks: Array.isArray(result?.poseLandmarks?.[0])
+            ? result.poseLandmarks[0]
+            : result?.poseLandmarks || null,
+          ea: Array.isArray(result?.poseWorldLandmarks?.[0])
+            ? result.poseWorldLandmarks[0]
+            : result?.poseWorldLandmarks || result?.za || result?.ea || null,
+          leftHandLandmarks: disableHands
+            ? null
+            : Array.isArray(result?.leftHandLandmarks?.[0])
+            ? result.leftHandLandmarks[0]
+            : result?.leftHandLandmarks || null,
+          rightHandLandmarks: disableHands
+            ? null
+            : Array.isArray(result?.rightHandLandmarks?.[0])
+            ? result.rightHandLandmarks[0]
+            : result?.rightHandLandmarks || null,
+        };
+      };
       let firstHolisticFrameLogged = false;
 
       const getDrawRect = (sourceWidth, sourceHeight, targetWidth, targetHeight) => {
@@ -2198,9 +2280,67 @@ export const useChatStore = defineStore('chat', {
         });
       };
 
+      const shouldDisableHandsForCurrentRuntime = () =>
+        this.holisticRuntimeKind === HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI;
+
+      const handleHolisticResult = (rawResult, options = {}) => {
+        const normalizedResult = normalizeHolisticResult(rawResult, {
+          disableHands:
+            options.disableHands ?? shouldDisableHandsForCurrentRuntime(),
+        });
+        const faceCount = normalizedResult.faceLandmarks?.length || 0;
+        const poseCount = normalizedResult.poseLandmarks?.length || 0;
+        this.syncMotionStatus(faceCount, poseCount);
+
+        if (!firstHolisticFrameLogged) {
+          firstHolisticFrameLogged = true;
+          this.logDebug("startHolistic:firstDetectSuccess", {
+            readyState: videoElement.readyState,
+            videoWidth: videoElement.videoWidth,
+            videoHeight: videoElement.videoHeight,
+            faceCount,
+            poseCount,
+            runtimeKind: this.holisticRuntimeKind || "worker",
+          });
+        }
+
+        if (!this.holisticTrackingLogged && (faceCount > 0 || poseCount > 0)) {
+          this.holisticTrackingLogged = true;
+          this.logDebug("startHolistic:trackingDetected", {
+            faceCount,
+            poseCount,
+            runtimeKind: this.holisticRuntimeKind || "worker",
+          });
+        }
+
+        drawResults(normalizedResult);
+        animateVRM(currentVrm, normalizedResult, {
+          disableHands:
+            options.disableHands ?? shouldDisableHandsForCurrentRuntime(),
+        });
+
+        if (normalizedResult.faceLandmarks?.length) {
+          this.holisticEmptyFaceFrames = 0;
+          return;
+        }
+
+        this.holisticEmptyFaceFrames += 1;
+      };
+      let legacyResultsListenerTarget = null;
+      const handleLegacyHolisticResult = (rawResult) => {
+        try {
+          handleHolisticResult(rawResult, { disableHands: true });
+        } catch (error) {
+          console.warn("Safari 호환 Holistic 결과 처리에 실패했습니다.", error);
+        }
+      };
+
       const processHolisticFrame = async () => {
         const workerActive = this.isHolisticWorkerActive();
         const mainThreadActive = this.isHolisticMainThreadActive();
+        const legacySafariActive =
+          mainThreadActive &&
+          this.holisticRuntimeKind === HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI;
         if (
           !videoElement ||
           videoElement.readyState < 2 ||
@@ -2217,6 +2357,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         let result;
+        let handledByLegacyListener = false;
         this.holisticFrameInFlight = true;
         try {
           this.lastHolisticVideoTime = currentVideoTime;
@@ -2227,6 +2368,15 @@ export const useChatStore = defineStore('chat', {
               frameBitmap,
               detectTimestamp
             );
+          } else if (legacySafariActive) {
+            if (legacyResultsListenerTarget !== this.holistic) {
+              this.holistic?.onResults(handleLegacyHolisticResult);
+              legacyResultsListenerTarget = this.holistic;
+            }
+            await this.holistic?.send({
+              image: videoElement,
+            });
+            handledByLegacyListener = true;
           } else {
             result = this.holistic?.detectForVideo(
               videoElement,
@@ -2261,42 +2411,10 @@ export const useChatStore = defineStore('chat', {
           return;
         }
         try {
-          const normalizedResult = normalizeHolisticResult(result);
-          const faceCount = normalizedResult.faceLandmarks?.length || 0;
-          const poseCount = normalizedResult.poseLandmarks?.length || 0;
-          this.syncMotionStatus(faceCount, poseCount);
-          if (!firstHolisticFrameLogged) {
-            firstHolisticFrameLogged = true;
-            this.logDebug("startHolistic:firstDetectSuccess", {
-              readyState: videoElement.readyState,
-              videoWidth: videoElement.videoWidth,
-              videoHeight: videoElement.videoHeight,
-              faceCount,
-              poseCount,
-            });
-          }
-
-          if (
-            !this.holisticTrackingLogged &&
-            (faceCount > 0 || poseCount > 0)
-          ) {
-            this.holisticTrackingLogged = true;
-            this.logDebug("startHolistic:trackingDetected", {
-              faceCount,
-              poseCount,
-            });
-          }
-
-          drawResults(normalizedResult);
-          animateVRM(currentVrm, normalizedResult);
-
-          if (normalizedResult.faceLandmarks?.length) {
-            this.holisticEmptyFaceFrames = 0;
+          if (handledByLegacyListener) {
             return;
           }
-
-          this.holisticEmptyFaceFrames += 1;
-
+          handleHolisticResult(result);
         } finally {
           this.holisticFrameInFlight = false;
         }
