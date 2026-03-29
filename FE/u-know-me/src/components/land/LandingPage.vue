@@ -1,6 +1,15 @@
 <template>
   <div class="landing-page">
-    <video class="landing-video" muted autoplay loop>
+    <video
+      ref="landingVideo"
+      class="landing-video"
+      muted
+      autoplay
+      loop
+      playsinline
+      webkit-playsinline="true"
+      preload="auto"
+    >
       <source src="~@/assets/land/landing-background.mp4" type="video/mp4">
     </video>
     <img class="landing-text" src="@/assets/land/landing-text.png" alt="landing-text">
@@ -14,6 +23,30 @@
 <script>
 export default {
   name: 'LandingPage',
+  mounted() {
+    const videoElement = this.$refs.landingVideo
+    if (!videoElement) {
+      return
+    }
+
+    videoElement.muted = true
+    videoElement.defaultMuted = true
+    videoElement.playsInline = true
+    videoElement.setAttribute('muted', '')
+    videoElement.setAttribute('playsinline', '')
+    videoElement.setAttribute('webkit-playsinline', 'true')
+
+    const tryPlay = () => {
+      const playPromise = videoElement.play?.()
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {})
+      }
+    }
+
+    videoElement.addEventListener('loadedmetadata', tryPlay, { once: true })
+    videoElement.addEventListener('canplay', tryPlay, { once: true })
+    tryPlay()
+  },
 }
 </script>
 
