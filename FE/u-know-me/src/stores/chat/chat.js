@@ -156,8 +156,12 @@ const isHolisticMainThreadProfile = (profile) =>
   normalizeHolisticProcessingProfile(profile) ===
   HOLISTIC_PROCESSING_PROFILE.MAIN_CPU;
 
+const ENABLE_LEGACY_SAFARI_HOLISTIC_RUNTIME = false;
+
 const shouldUseLegacySafariHolisticRuntime = (profile) =>
-  isIOSSafariBrowser() && isHolisticMainThreadProfile(profile);
+  ENABLE_LEGACY_SAFARI_HOLISTIC_RUNTIME &&
+  isIOSSafariBrowser() &&
+  isHolisticMainThreadProfile(profile);
 
 const supportsHolisticProcessingProfile = (profile) => {
   const normalizedProfile = normalizeHolisticProcessingProfile(profile);
