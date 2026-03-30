@@ -42,6 +42,29 @@ description: Work on the UKnowMe monorepo. Use when changing the Vue frontend, S
   - `LIVEKIT_API_SECRET`
 - The frontend connects to LiveKit using the `/session` API response.
 - When debugging camera or microphone issues, remember that `getUserMedia` needs `https` or `localhost`.
+- Do not assume iOS Chrome and iOS Safari behave the same just because both are WebKit-based.
+- Current iOS motion handling policy:
+  - Desktop, Android, iOS Chrome: keep the `@mediapipe/tasks-vision` path.
+  - iOS Safari: use the legacy `@mediapipe/holistic` runtime on the main thread.
+  - iOS Safari motion should stay face + pose centric; hand rigging is intentionally disabled for stability.
+  - Safari legacy assets are served from `FE/u-know-me/public/mediapipe/holistic/`.
+- Chat motion troubleshooting notes live in:
+  - `FE/u-know-me/docs/ios-safari-motion-troubleshooting.md`
+
+## Landing Media
+
+- Landing background video lives in:
+  - `FE/u-know-me/src/components/land/LandingPage.vue`
+  - `FE/u-know-me/src/assets/land/landing-background.mp4`
+- Keep the landing background video iOS-friendly:
+  - `H.264`
+  - `yuv420p`
+  - `faststart`
+  - no audio track
+  - no extra data/timecode track
+- Keep a poster fallback for iOS black-screen/autoplay failures:
+  - `FE/u-know-me/src/assets/land/landing-background-poster.jpg`
+- If the landing video changes, preserve the retry flow on `loadeddata`, `canplay`, `pageshow`, `focus`, and first touch/pointer input so iOS can retry playback.
 
 ## Deployment Defaults
 
