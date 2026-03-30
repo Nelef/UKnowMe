@@ -4,10 +4,26 @@
       <div>너, 나 알아?</div>
       <div class="signin-subtitle">Welcome Back</div>
     </div>
+    <div class="signin-shortcuts">
+      <div class="signin-shortcuts-label">빠른 입장</div>
+      <div class="signin-shortcuts-grid">
+        <button
+          v-for="shortcut in quickLoginOptions"
+          :key="shortcut.id"
+          type="button"
+          class="signin-shortcut-btn"
+          :class="shortcut.className"
+          :disabled="isSubmitting"
+          @click="loginWithShortcut(shortcut)"
+        >
+          {{ shortcut.label }}
+        </button>
+      </div>
+    </div>
     <form
       id="signInForm"
       action="POST"
-      @submit.prevent="account.login(credentials)"
+      @submit.prevent="submitManualLogin"
     >
       <label class="signin-label" for="signInId">아이디</label>
       <div class="signin-input">
@@ -20,6 +36,7 @@
           id="signInId"
           placeholder="아이디를 입력해 주세요"
           v-model="credentials.id"
+          :disabled="isSubmitting"
         />
       </div>
       <label class="signin-label" for="signInPassword">비밀번호</label>
@@ -33,13 +50,16 @@
           id="signInPassword"
           placeholder="비밀번호를 입력해 주세요"
           v-model="credentials.password"
+          :disabled="isSubmitting"
         />
       </div>
       <div class="signin-error" v-if="account.authError.login === 1">
         아이디 또는 비밀번호를 잘못 입력했습니다.
         <br />입력하신 내용을 다시 확인해주세요.
       </div>
-      <button class="login-btn">로그인</button>
+      <button class="login-btn" :disabled="isSubmitting">
+        {{ isSubmitting ? "로그인 중..." : "일반로그인" }}
+      </button>
     </form>
     <p class="login-signup">
       계정이 없으신가요?
@@ -53,6 +73,21 @@ import { ref } from "vue";
 import { useAccountStore } from "@/stores/land/account";
 import { useLandStore } from "@/stores/land/land";
 
+const QUICK_LOGIN_OPTIONS = Object.freeze([
+  {
+    label: "테스트남자",
+    id: "test",
+    password: "testtest1!",
+    className: "signin-shortcut-btn-man",
+  },
+  {
+    label: "테스트여자",
+    id: "test2",
+    password: "testtest2@",
+    className: "signin-shortcut-btn-woman",
+  },
+]);
+
 export default {
   name: "SignIn",
   setup() {
@@ -62,10 +97,48 @@ export default {
       id: "",
       password: "",
     });
+    const isSubmitting = ref(false);
+
+    const submitLogin = async (nextCredentials = null) => {
+      if (isSubmitting.value) {
+        return;
+      }
+
+      const requestCredentials = nextCredentials
+        ? { ...nextCredentials }
+        : { ...credentials.value };
+
+      if (nextCredentials) {
+        credentials.value = { ...requestCredentials };
+      }
+
+      isSubmitting.value = true;
+      try {
+        await account.login(requestCredentials);
+      } finally {
+        isSubmitting.value = false;
+      }
+    };
+
+    const loginWithShortcut = async (shortcut) => {
+      await submitLogin({
+        id: shortcut.id,
+        password: shortcut.password,
+      });
+    };
+
+    const submitManualLogin = async () => {
+      await submitLogin();
+    };
+
     return {
       account,
       credentials,
+      isSubmitting,
       land,
+      loginWithShortcut,
+      quickLoginOptions: QUICK_LOGIN_OPTIONS,
+      submitManualLogin,
     };
   },
 };
@@ -78,6 +151,53 @@ export default {
   gap: 22px;
   height: 100%;
   min-height: 0;
+}
+.signin-shortcuts {
+  display: grid;
+  gap: 10px;
+}
+.signin-shortcuts-label {
+  padding-left: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 18px;
+  color: #6a5b91;
+}
+.signin-shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.signin-shortcut-btn {
+  min-height: 50px;
+  border: 1px solid rgba(130, 39, 250, 0.14);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fffdfd 0%, #f5f1ff 100%);
+  color: #362456;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  box-shadow:
+    0 10px 18px rgba(113, 79, 176, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  transition: transform 0.15s ease, box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+.signin-shortcut-btn:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 14px 22px rgba(113, 79, 176, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+.signin-shortcut-btn-man {
+  border-color: rgba(68, 134, 255, 0.2);
+  background: linear-gradient(180deg, #f5f9ff 0%, #eef2ff 100%);
+  color: #24458d;
+}
+.signin-shortcut-btn-woman {
+  border-color: rgba(255, 104, 152, 0.2);
+  background: linear-gradient(180deg, #fff6fb 0%, #fff0f6 100%);
+  color: #9f2f61;
 }
 .sign-head {
   font-weight: 700;
@@ -167,6 +287,12 @@ export default {
 .login-btn:active {
   transform: translateY(0);
 }
+.signin-shortcut-btn:disabled,
+.login-btn:disabled,
+#signInForm input:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
 #signInForm input {
   width: 100%;
   height: 56px;
@@ -203,6 +329,14 @@ export default {
 @media (max-width: 640px) {
   .signin-shell {
     gap: 18px;
+  }
+  .signin-shortcuts-grid {
+    gap: 8px;
+  }
+  .signin-shortcut-btn {
+    min-height: 46px;
+    border-radius: 14px;
+    font-size: 14px;
   }
   .sign-head {
     font-size: 28px;
