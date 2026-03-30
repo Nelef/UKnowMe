@@ -41,6 +41,12 @@ const CHAT_DESKTOP_AVATAR_SIZE = { width: 960, height: 720 };
 const CHAT_MOBILE_AVATAR_SIZE = { width: 720, height: 540 };
 const CHAT_MOTION_MIN_CONFIDENCE = 0.45;
 const CHAT_CAPTURE_BACKGROUND_COLOR = "#252525";
+const HOLISTIC_TASKS_RECOVERY_EMPTY_FACE_FRAME_THRESHOLD = Math.max(
+  10,
+  Math.round(CHAT_MOTION_PROCESS_FPS * 0.5)
+);
+const HOLISTIC_TASKS_RECOVERY_COOLDOWN_MS = 1200;
+const HOLISTIC_MANUAL_REFRESH_PROMPT_DELAY_MS = 3000;
 const AVATAR_CAPTURE_STRATEGY = Object.freeze({
   BRIDGE_CANVAS: "bridge-canvas",
   DIRECT_CANVAS: "direct-canvas",
@@ -74,6 +80,18 @@ const getAvatarCaptureStrategy = () =>
   isIOSSafariBrowser()
     ? AVATAR_CAPTURE_STRATEGY.DIRECT_CANVAS
     : AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS;
+
+const stopMediaStreamTracks = (stream) => {
+  const tracks = stream?.getTracks?.() || [];
+
+  tracks.forEach((track) => {
+    try {
+      track.stop();
+    } catch (error) {
+      console.warn("미디어 트랙 종료 중 오류가 발생했습니다.", error);
+    }
+  });
+};
 
 const isCompactViewport = () =>
   typeof window !== "undefined" &&
@@ -241,53 +259,143 @@ const loadLegacyHolisticModule = async () => {
   return legacyHolisticModulePromise;
 };
 
+const resolveLegacyHolisticConstructor = (legacyHolisticModule) => {
+  const candidates = [
+    legacyHolisticModule?.Holistic,
+    legacyHolisticModule?.default?.Holistic,
+    legacyHolisticModule?.["module.exports"]?.Holistic,
+    typeof legacyHolisticModule?.default === "function"
+      ? legacyHolisticModule.default
+      : null,
+    typeof legacyHolisticModule?.["module.exports"] === "function"
+      ? legacyHolisticModule["module.exports"]
+      : null,
+  ];
+
+  return candidates.find((candidate) => typeof candidate === "function") || null;
+};
+
+const createTasksHolisticLandmarker = async (delegate) => {
+  const { FilesetResolver, HolisticLandmarker } =
+    await loadTasksVisionModule();
+
+  if (!tasksVisionFilesetPromise) {
+    tasksVisionFilesetPromise = FilesetResolver.forVisionTasks(
+      TASKS_VISION_WASM_URL
+    );
+  }
+
+  const wasmFileset = await tasksVisionFilesetPromise;
+
+  return await HolisticLandmarker.createFromOptions(wasmFileset, {
+    baseOptions: {
+      modelAssetPath: HOLISTIC_LANDMARKER_MODEL_URL,
+      delegate,
+    },
+    runningMode: "VIDEO",
+    minFaceDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+    minFacePresenceConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+    minPoseDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+    minPosePresenceConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+    minHandLandmarksConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+    outputFaceBlendshapes: false,
+    outputPoseSegmentationMasks: false,
+  });
+};
+
+const pickPrimaryLandmarkSet = (landmarks) =>
+  Array.isArray(landmarks?.[0]) ? landmarks[0] : landmarks;
+
+const serializeLandmarks = (landmarks) =>
+  Array.isArray(landmarks)
+    ? landmarks.map((landmark) => ({
+        x: landmark?.x ?? null,
+        y: landmark?.y ?? null,
+        z: landmark?.z ?? null,
+        visibility: landmark?.visibility ?? null,
+        presence: landmark?.presence ?? null,
+      }))
+    : null;
+
+const serializeHolisticResult = (result) => ({
+  faceLandmarks: serializeLandmarks(
+    pickPrimaryLandmarkSet(result?.faceLandmarks)
+  ),
+  poseLandmarks: serializeLandmarks(
+    pickPrimaryLandmarkSet(result?.poseLandmarks)
+  ),
+  poseWorldLandmarks: serializeLandmarks(
+    pickPrimaryLandmarkSet(
+      result?.poseWorldLandmarks || result?.za || result?.ea
+    )
+  ),
+  leftHandLandmarks: serializeLandmarks(
+    pickPrimaryLandmarkSet(result?.leftHandLandmarks)
+  ),
+  rightHandLandmarks: serializeLandmarks(
+    pickPrimaryLandmarkSet(result?.rightHandLandmarks)
+  ),
+});
+
 const getHolisticProcessingModeLabel = ({
   status = "",
   requestedProfile = getDefaultHolisticProcessingProfile(),
   motionEnabled = true,
   switching = false,
+  runtimeKind = "",
 } = {}) => {
   const normalizedProfile =
     normalizeHolisticProcessingProfile(requestedProfile);
+  const effectiveRuntimeKind =
+    runtimeKind ||
+    (shouldUseLegacySafariHolisticRuntime(normalizedProfile)
+      ? HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI
+      : "");
+  const formatModeLabel = (profile) =>
+    normalizeHolisticProcessingProfile(profile) ===
+      HOLISTIC_PROCESSING_PROFILE.MAIN_CPU &&
+    effectiveRuntimeKind === HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI
+      ? "브라우저 + CPU 레거시"
+      : formatHolisticProcessingModeLabel(profile);
 
   if (switching) {
-    return `${formatHolisticProcessingModeLabel(normalizedProfile)} - 설정 중`;
+    return `${formatModeLabel(normalizedProfile)} - 설정 중`;
   }
 
   switch (status) {
     case "motion-off":
-      return formatHolisticProcessingModeLabel(
+      return formatModeLabel(
         HOLISTIC_PROCESSING_PROFILE.OFF
       );
     case "worker-unavailable":
       return "워커 불가";
     case "main-cpu-active":
-      return formatHolisticProcessingModeLabel(
+      return formatModeLabel(
         HOLISTIC_PROCESSING_PROFILE.MAIN_CPU
       );
     case "worker-cpu-active":
-      return formatHolisticProcessingModeLabel(
+      return formatModeLabel(
         HOLISTIC_PROCESSING_PROFILE.WORKER_CPU
       );
     case "worker-gpu-active":
-      return formatHolisticProcessingModeLabel(
+      return formatModeLabel(
         HOLISTIC_PROCESSING_PROFILE.WORKER_GPU
       );
     case "worker-cpu-failed":
-      return `${formatHolisticProcessingModeLabel(
+      return `${formatModeLabel(
         HOLISTIC_PROCESSING_PROFILE.WORKER_CPU
       )} - 실패`;
     case "worker-gpu-failed":
-      return `${formatHolisticProcessingModeLabel(
+      return `${formatModeLabel(
         HOLISTIC_PROCESSING_PROFILE.WORKER_GPU
       )} - 실패`;
     case "main-cpu-failed":
-      return `${formatHolisticProcessingModeLabel(
+      return `${formatModeLabel(
         HOLISTIC_PROCESSING_PROFILE.MAIN_CPU
       )} - 실패`;
     default:
       if (!motionEnabled || normalizedProfile === HOLISTIC_PROCESSING_PROFILE.OFF) {
-        return formatHolisticProcessingModeLabel(
+        return formatModeLabel(
           HOLISTIC_PROCESSING_PROFILE.OFF
         );
       }
@@ -300,7 +408,7 @@ const getHolisticProcessingModeLabel = ({
         return "브라우저 불가";
       }
 
-      return formatHolisticProcessingModeLabel(normalizedProfile);
+      return formatModeLabel(normalizedProfile);
   }
 };
 
@@ -333,6 +441,12 @@ export const useChatStore = defineStore('chat', {
     holisticFrameInFlight: false,
     lastHolisticVideoTime: -1,
     holisticTrackingLogged: false,
+    holisticRecoveryInFlight: false,
+    lastHolisticRecoveryAt: 0,
+    motionFaceMissingSince: 0,
+    motionRefreshPromptVisible: false,
+    motionRefreshPromptTimerId: null,
+    motionRestartInFlight: false,
     avatarRenderer: null,
     avatarScene: null,
     avatarOrbitControls: null,
@@ -366,6 +480,7 @@ export const useChatStore = defineStore('chat', {
         requestedProfile: state.motionRequestedProfile,
         motionEnabled: state.motionCheck,
         switching: state.motionProfileSwitching,
+        runtimeKind: state.holisticRuntimeKind,
       });
     },
   },
@@ -479,6 +594,13 @@ export const useChatStore = defineStore('chat', {
       this.motionSettingsOpen = false;
       this.motionProfileSwitching = false;
       this.holisticRuntimeKind = "";
+      this.holisticRecoveryInFlight = false;
+      this.lastHolisticRecoveryAt = 0;
+      this.holisticEmptyFaceFrames = 0;
+      this.motionFaceMissingSince = 0;
+      this.clearMotionRefreshPromptTimer();
+      this.motionRefreshPromptVisible = false;
+      this.motionRestartInFlight = false;
       this.motionCheck =
         this.motionRequestedProfile !== HOLISTIC_PROCESSING_PROFILE.OFF;
       this.refreshTrackingDebugPreviewFlag();
@@ -501,6 +623,61 @@ export const useChatStore = defineStore('chat', {
 
       return this.debugLoggingEnabled;
     },
+    clearMotionRefreshPromptTimer() {
+      if (this.motionRefreshPromptTimerId != null && typeof window !== "undefined") {
+        window.clearTimeout(this.motionRefreshPromptTimerId);
+      }
+
+      this.motionRefreshPromptTimerId = null;
+    },
+    updateMotionRefreshPrompt(faceCount = this.motionFaceCount) {
+      const nextFaceCount = faceCount || 0;
+      const resolvedProfile = normalizeHolisticProcessingProfile(
+        this.motionAppliedProfile || this.motionRequestedProfile
+      );
+      const shouldTrackPrompt =
+        this.ready &&
+        this.motionCheck &&
+        !this.motionRestartInFlight &&
+        resolvedProfile === HOLISTIC_PROCESSING_PROFILE.MAIN_CPU;
+
+      if (!shouldTrackPrompt || nextFaceCount > 0) {
+        this.motionFaceMissingSince = 0;
+        this.motionRefreshPromptVisible = false;
+        this.clearMotionRefreshPromptTimer();
+        return;
+      }
+
+      const now =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      if (!this.motionFaceMissingSince) {
+        this.motionFaceMissingSince = now;
+      }
+
+      if (this.motionRefreshPromptVisible) {
+        return;
+      }
+
+      const elapsedMs = now - this.motionFaceMissingSince;
+      if (elapsedMs >= HOLISTIC_MANUAL_REFRESH_PROMPT_DELAY_MS) {
+        if (!this.motionRefreshPromptVisible) {
+          this.logDebug("startHolistic:manualRefreshPromptShown", {
+            missingSince: this.motionFaceMissingSince,
+            elapsedMs,
+          });
+        }
+        this.motionRefreshPromptVisible = true;
+        this.clearMotionRefreshPromptTimer();
+        return;
+      }
+
+      if (this.motionRefreshPromptTimerId == null && typeof window !== "undefined") {
+        this.motionRefreshPromptTimerId = window.setTimeout(() => {
+          this.motionRefreshPromptTimerId = null;
+          this.updateMotionRefreshPrompt(this.motionFaceCount);
+        }, HOLISTIC_MANUAL_REFRESH_PROMPT_DELAY_MS - elapsedMs);
+      }
+    },
     syncMotionStatus(faceCount, poseCount, force = false) {
       const nextFaceCount = faceCount || 0;
       const nextPoseCount = poseCount || 0;
@@ -518,12 +695,14 @@ export const useChatStore = defineStore('chat', {
         !trackingPresenceChanged &&
         (!countsChanged || now - this.lastMotionStatusSyncAt < 250)
       ) {
+        this.updateMotionRefreshPrompt(nextFaceCount);
         return;
       }
 
       this.motionFaceCount = nextFaceCount;
       this.motionPoseCount = nextPoseCount;
       this.lastMotionStatusSyncAt = now;
+      this.updateMotionRefreshPrompt(nextFaceCount);
     },
 
     getTime() {
@@ -608,6 +787,12 @@ export const useChatStore = defineStore('chat', {
       this.holisticFrameInFlight = false;
       this.lastHolisticVideoTime = -1;
       this.holisticTrackingLogged = false;
+      this.holisticRecoveryInFlight = false;
+      this.lastHolisticRecoveryAt = 0;
+      this.motionFaceMissingSince = 0;
+      this.clearMotionRefreshPromptTimer();
+      this.motionRefreshPromptVisible = false;
+      this.motionRestartInFlight = false;
       this.motionFaceCount = 0;
       this.motionPoseCount = 0;
 
@@ -650,8 +835,9 @@ export const useChatStore = defineStore('chat', {
       this.ready = false;
       this.invalidateTrackingPreviewElements();
     },
-    createTrackingCamera(videoElement, frameHandler) {
-      let mediaStream = null;
+    createTrackingCamera(videoElement, frameHandler, options = {}) {
+      const { initialStream = null } = options;
+      let mediaStream = initialStream;
       let animationFrameId = null;
       let active = false;
       let lastHandledAt = 0;
@@ -697,44 +883,50 @@ export const useChatStore = defineStore('chat', {
         start: async () => {
           active = true;
           this.prepareVideoElement(videoElement);
-          const cameraSize = getTrackingCameraSize();
-          const preferredVideoConstraints = {
-            width: {
-              ideal: cameraSize.width,
-            },
-            height: {
-              ideal: cameraSize.height,
-            },
-            resizeMode: {
-              ideal: "none",
-            },
-            facingMode: "user",
-          };
-          const fallbackVideoConstraints = {
-            width: {
-              ideal: cameraSize.width,
-            },
-            height: {
-              ideal: cameraSize.height,
-            },
-            facingMode: "user",
-          };
+          if (!mediaStream) {
+            const cameraSize = getTrackingCameraSize();
+            const preferredVideoConstraints = {
+              width: {
+                ideal: cameraSize.width,
+              },
+              height: {
+                ideal: cameraSize.height,
+              },
+              resizeMode: {
+                ideal: "none",
+              },
+              facingMode: "user",
+            };
+            const fallbackVideoConstraints = {
+              width: {
+                ideal: cameraSize.width,
+              },
+              height: {
+                ideal: cameraSize.height,
+              },
+              facingMode: "user",
+            };
 
-          try {
-            mediaStream = await navigator.mediaDevices.getUserMedia({
-              audio: false,
-              video: preferredVideoConstraints,
-            });
-          } catch (error) {
-            this.logDebug("tracking:getUserMediaPreferredFailed", {
-              message: error?.message || String(error),
-            });
-            mediaStream = await navigator.mediaDevices.getUserMedia({
-              audio: false,
-              video: fallbackVideoConstraints,
-            });
+            try {
+              mediaStream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: preferredVideoConstraints,
+              });
+            } catch (error) {
+              this.logDebug("tracking:getUserMediaPreferredFailed", {
+                message: error?.message || String(error),
+              });
+              mediaStream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: fallbackVideoConstraints,
+              });
+            }
+          } else {
+            this.logDebug("tracking:cameraReuse");
           }
-          videoElement.srcObject = mediaStream;
+          if (videoElement.srcObject !== mediaStream) {
+            videoElement.srcObject = mediaStream;
+          }
           await videoElement.play();
           const trackSettings =
             mediaStream?.getVideoTracks?.()[0]?.getSettings?.() || {};
@@ -746,23 +938,32 @@ export const useChatStore = defineStore('chat', {
           });
           animationFrameId = window.requestAnimationFrame(tick);
         },
-        stop: () => {
+        stop: (stopOptions = {}) => {
+          const {
+            stopStream = true,
+            clearVideoElement = true,
+          } = stopOptions;
           active = false;
           if (animationFrameId) {
             window.cancelAnimationFrame(animationFrameId);
             animationFrameId = null;
           }
 
-          const tracks =
-            videoElement?.srcObject?.getTracks?.() ||
-            mediaStream?.getTracks?.() ||
-            [];
-          tracks.forEach((track) => track.stop());
-          if (videoElement) {
+          if (stopStream) {
+            const tracks =
+              videoElement?.srcObject?.getTracks?.() ||
+              mediaStream?.getTracks?.() ||
+              [];
+            tracks.forEach((track) => track.stop());
+          }
+          if (clearVideoElement && videoElement) {
             videoElement.srcObject = null;
           }
-          mediaStream = null;
+          if (stopStream) {
+            mediaStream = null;
+          }
         },
+        getStream: () => mediaStream,
       };
     },
     createPassiveCamera(videoElement) {
@@ -909,6 +1110,9 @@ export const useChatStore = defineStore('chat', {
       this.holisticFrameInFlight = false;
       this.holisticEmptyFaceFrames = 0;
       this.holisticTrackingLogged = false;
+      this.motionFaceMissingSince = 0;
+      this.clearMotionRefreshPromptTimer();
+      this.motionRefreshPromptVisible = false;
       this.syncMotionStatus(0, 0, true);
 
       const { primaryCanvas, debugCanvas } = this.getTrackingPreviewElements();
@@ -1054,6 +1258,223 @@ export const useChatStore = defineStore('chat', {
     disposeHolisticRuntime(reason = "") {
       this.closeHolisticMainThread(reason);
       this.destroyHolisticWorker(reason);
+      this.holisticRuntimeKind = "";
+      this.holisticRecoveryInFlight = false;
+      this.clearMotionRefreshPromptTimer();
+    },
+    cleanupMotionTrackingSession(reason = "", options = {}) {
+      const { stopCamera = true } = options;
+
+      if (this.camera) {
+        try {
+          this.camera.stop({
+            stopStream: stopCamera,
+            clearVideoElement: stopCamera,
+          });
+        } catch (error) {
+          console.warn("카메라 종료 중 오류가 발생했습니다.", error);
+        }
+        this.camera = null;
+      }
+
+      if (this.avatarCaptureTrack) {
+        try {
+          this.avatarCaptureTrack.stop();
+        } catch (error) {
+          console.warn("아바타 캡처 트랙 종료 중 오류가 발생했습니다.", error);
+        }
+        this.avatarCaptureTrack = null;
+      }
+
+      this.avatarCaptureManualFrames = false;
+      this.disposeHolisticRuntime(reason || "motion-restart");
+      this.holisticEmptyFaceFrames = 0;
+      this.holisticFrameInFlight = false;
+      this.lastHolisticVideoTime = -1;
+      this.holisticTrackingLogged = false;
+      this.motionFaceMissingSince = 0;
+      this.motionRefreshPromptVisible = false;
+      this.syncMotionStatus(0, 0, true);
+
+      const testVideo = document.getElementById("test-video");
+      if (testVideo?.srcObject) {
+        stopMediaStreamTracks(testVideo.srcObject);
+        testVideo.srcObject = null;
+      }
+
+      const {
+        primaryCanvas,
+        debugCanvas,
+        debugVideo,
+      } = this.getTrackingPreviewElements();
+
+      for (const canvasElement of [primaryCanvas, debugCanvas]) {
+        if (!canvasElement) {
+          continue;
+        }
+
+        const canvasCtx = canvasElement.getContext("2d");
+        canvasCtx?.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      }
+
+      if (debugVideo?.srcObject) {
+        debugVideo.srcObject = null;
+      }
+
+      this.ready = false;
+      this.updateTrackingPreviewVisibility(this.motionCheck);
+    },
+    async restartMotionTrackingSession() {
+      const resolvedProfile = normalizeHolisticProcessingProfile(
+        this.motionAppliedProfile || this.motionRequestedProfile
+      );
+      const videoElement = document.querySelector(".tracking-primary-video");
+      const retainedCameraStream =
+        videoElement?.srcObject || this.camera?.getStream?.() || null;
+      const reusableCameraStream =
+        retainedCameraStream?.getVideoTracks?.().some(
+          (track) => track?.readyState === "live"
+        )
+          ? retainedCameraStream
+          : null;
+
+      if (
+        this.motionRestartInFlight ||
+        this.motionProfileSwitching ||
+        resolvedProfile !== HOLISTIC_PROCESSING_PROFILE.MAIN_CPU
+      ) {
+        return false;
+      }
+
+      this.motionRestartInFlight = true;
+      this.motionProfileSwitching = true;
+      this.motionRefreshPromptVisible = false;
+      this.logDebug("motion:manualRestartStart", {
+        resolvedProfile,
+        runtimeKind: this.holisticRuntimeKind || "none",
+        reuseCameraStream: Boolean(reusableCameraStream),
+      });
+
+      try {
+        await this.waitForHolisticWorkerIdle();
+        this.cleanupMotionTrackingSession("manual-restart", {
+          stopCamera: false,
+        });
+        this.motionRequestedProfile = resolvedProfile;
+        this.motionAppliedProfile = "";
+        this.motionCheck = true;
+        this.holisticDelegateStatus = "profile-switching";
+
+        const avatarVideo = await this.startHolistic({
+          forceRecreate: true,
+          reuseCameraStream: reusableCameraStream,
+        });
+
+        if (this.room && avatarVideo && !this.soloMode) {
+          await this.switchPublishedVideoTrack(avatarVideo, {
+            trackName: "avatar-camera",
+          });
+        }
+
+        this.systemMessagePrint("모션 인식을 다시 불러왔습니다.");
+        this.logDebug("motion:manualRestartDone", {
+          hasAvatarVideo: Boolean(avatarVideo),
+          delegateStatus: this.holisticDelegateStatus,
+        });
+        return true;
+      } catch (error) {
+        this.motionRefreshPromptVisible = true;
+        this.logDebug("motion:manualRestartFailed", {
+          message: error?.message || String(error),
+        });
+        console.warn("모션 새로고침에 실패했습니다.", error);
+        this.systemMessagePrint("모션 새로고침에 실패했습니다.");
+        return false;
+      } finally {
+        this.motionProfileSwitching = false;
+        this.motionRestartInFlight = false;
+      }
+    },
+    async recoverTaskHolisticTracking(reason = "") {
+      if (
+        this.holisticRecoveryInFlight ||
+        !this.motionCheck ||
+        this.motionProfileSwitching ||
+        !this.isHolisticMainThreadActive() ||
+        this.holisticRuntimeKind !== HOLISTIC_RUNTIME_KIND.TASKS
+      ) {
+        return false;
+      }
+
+      const now =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      if (now - this.lastHolisticRecoveryAt < HOLISTIC_TASKS_RECOVERY_COOLDOWN_MS) {
+        return false;
+      }
+
+      const resolvedProfile = normalizeHolisticProcessingProfile(
+        this.motionAppliedProfile || this.motionRequestedProfile
+      );
+      if (!isHolisticMainThreadProfile(resolvedProfile)) {
+        return false;
+      }
+
+      const resolvedDelegate = getHolisticDelegateForProfile(resolvedProfile);
+      const previousHolistic = this.holistic;
+
+      this.holisticRecoveryInFlight = true;
+      this.lastHolisticRecoveryAt = now;
+      this.logDebug("holisticMain:tasksRecoveryStart", {
+        reason,
+        resolvedProfile,
+        resolvedDelegate,
+      });
+
+      try {
+        const nextHolistic = markRaw(
+          await createTasksHolisticLandmarker(resolvedDelegate)
+        );
+
+        try {
+          const closeResult = previousHolistic?.close?.();
+          if (closeResult?.catch) {
+            closeResult.catch((error) => {
+              console.warn("기존 Tasks Holistic 종료 중 오류가 발생했습니다.", error);
+            });
+          }
+        } catch (error) {
+          console.warn("기존 Tasks Holistic 종료 중 오류가 발생했습니다.", error);
+        }
+
+        this.holistic = nextHolistic;
+        this.holisticRuntimeKind = HOLISTIC_RUNTIME_KIND.TASKS;
+        this.holisticDelegate = resolvedDelegate;
+        this.holisticDelegateStatus =
+          getHolisticActiveStatusForProfile(resolvedProfile);
+        this.motionAppliedProfile = resolvedProfile;
+        this.holisticFrameInFlight = false;
+        this.lastHolisticVideoTime = -1;
+        this.holisticEmptyFaceFrames = 0;
+        this.holisticTrackingLogged = false;
+        this.motionFaceMissingSince = 0;
+        this.clearMotionRefreshPromptTimer();
+        this.motionRefreshPromptVisible = false;
+        this.syncMotionStatus(0, 0, true);
+        this.logDebug("holisticMain:tasksRecoveryReady", {
+          reason,
+          resolvedProfile,
+        });
+        return true;
+      } catch (error) {
+        console.warn("Tasks Holistic 재생성에 실패했습니다.", error);
+        this.logDebug("holisticMain:tasksRecoveryFailed", {
+          reason,
+          message: error?.message || String(error),
+        });
+        return false;
+      } finally {
+        this.holisticRecoveryInFlight = false;
+      }
     },
     async refreshMotionPreviewVisibility() {
       const sourceVideoElement =
@@ -1070,6 +1491,10 @@ export const useChatStore = defineStore('chat', {
       this.motionRequestedProfile = HOLISTIC_PROCESSING_PROFILE.OFF;
       this.motionAppliedProfile = HOLISTIC_PROCESSING_PROFILE.OFF;
       this.motionCheck = false;
+      this.motionFaceMissingSince = 0;
+      this.clearMotionRefreshPromptTimer();
+      this.motionRefreshPromptVisible = false;
+      this.motionRestartInFlight = false;
       this.holisticDelegate = "";
       this.holisticDelegateStatus = "motion-off";
       this.holisticFrameInFlight = false;
@@ -1103,6 +1528,10 @@ export const useChatStore = defineStore('chat', {
       this.motionCheck = false;
       this.motionSettingsOpen = false;
       this.motionProfileSwitching = false;
+      this.motionFaceMissingSince = 0;
+      this.clearMotionRefreshPromptTimer();
+      this.motionRefreshPromptVisible = false;
+      this.motionRestartInFlight = false;
       this.holisticDelegate = "";
       this.holisticDelegateStatus = failureStatus;
       this.holisticFrameInFlight = false;
@@ -1136,6 +1565,9 @@ export const useChatStore = defineStore('chat', {
           getHolisticActiveStatusForProfile(normalizedProfile);
 
       this.motionSettingsOpen = false;
+      this.motionFaceMissingSince = 0;
+      this.clearMotionRefreshPromptTimer();
+      this.motionRefreshPromptVisible = false;
 
       if (alreadyActive) {
         await this.refreshMotionPreviewVisibility();
@@ -1276,6 +1708,41 @@ export const useChatStore = defineStore('chat', {
         [frameBitmap]
       );
     },
+    async detectHolisticMainThread(inputSource, timestampMs, options = {}) {
+      if (!this.holistic) {
+        throw new Error("메인 스레드 Holistic이 초기화되지 않았습니다.");
+      }
+
+      const { preferBitmapInput = false } = options;
+      let detectSource = inputSource;
+      let shouldCloseDetectSource = false;
+
+      if (preferBitmapInput && typeof createImageBitmap === "function") {
+        try {
+          detectSource = await createImageBitmap(inputSource);
+          shouldCloseDetectSource = detectSource !== inputSource;
+        } catch (error) {
+          this.logDebug("holisticMain:bitmapInputFallback", {
+            message: error?.message || String(error),
+          });
+          detectSource = inputSource;
+          shouldCloseDetectSource = false;
+        }
+      }
+
+      try {
+        const result = this.holistic.detectForVideo(
+          detectSource,
+          timestampMs
+        );
+
+        return serializeHolisticResult(result);
+      } finally {
+        if (shouldCloseDetectSource) {
+          detectSource?.close?.();
+        }
+      }
+    },
     destroyHolisticWorker(reason = "") {
       if (!holisticWorkerInstance) {
         return;
@@ -1311,11 +1778,11 @@ export const useChatStore = defineStore('chat', {
       const shouldUseWorker = isHolisticWorkerProfile(resolvedProfile);
       const shouldUseLegacySafariHolistic =
         shouldUseLegacySafariHolisticRuntime(resolvedProfile);
-      const expectedRuntimeKind = shouldUseWorker
-        ? ""
+      const expectedRuntimeKinds = shouldUseWorker
+        ? [""]
         : shouldUseLegacySafariHolistic
-        ? HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI
-        : HOLISTIC_RUNTIME_KIND.TASKS;
+        ? [HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI, HOLISTIC_RUNTIME_KIND.TASKS]
+        : [HOLISTIC_RUNTIME_KIND.TASKS];
       const canUseRequestedRuntime = shouldUseWorker
         ? this.canUseHolisticWorker()
         : this.canUseHolisticMainThread();
@@ -1325,7 +1792,7 @@ export const useChatStore = defineStore('chat', {
         hasCanvas: Boolean(canvas),
         forceRecreate,
         shouldUseWorker,
-        expectedRuntimeKind,
+        expectedRuntimeKinds,
         canUseRequestedRuntime,
       });
 
@@ -1361,7 +1828,7 @@ export const useChatStore = defineStore('chat', {
         ((shouldUseWorker && this.isHolisticWorkerActive()) ||
           (!shouldUseWorker && this.isHolisticMainThreadActive())) &&
         this.motionAppliedProfile === resolvedProfile &&
-        this.holisticRuntimeKind === expectedRuntimeKind &&
+        expectedRuntimeKinds.includes(this.holisticRuntimeKind) &&
         this.holisticDelegateStatus ===
           getHolisticActiveStatusForProfile(resolvedProfile)
       ) {
@@ -1377,63 +1844,64 @@ export const useChatStore = defineStore('chat', {
 
       if (!shouldUseWorker) {
         this.loadingText = shouldUseLegacySafariHolistic
-          ? "Safari 호환 모션 인식을 준비하고 있습니다."
+          ? "Safari 레거시 모션 인식을 준비하고 있습니다."
           : "브라우저에서 모션 인식을 준비하고 있습니다.";
         this.setLoadingState(55);
 
         try {
-          if (shouldUseLegacySafariHolistic) {
-            const { Holistic } = await loadLegacyHolisticModule();
-            const holistic = new Holistic({
-              locateFile: (file) => `${LEGACY_HOLISTIC_ASSET_URL}/${file}`,
-            });
-
-            holistic.setOptions({
-              selfieMode: true,
-              modelComplexity: 1,
-              smoothLandmarks: true,
-              enableSegmentation: false,
-              smoothSegmentation: false,
-              refineFaceLandmarks: true,
-              minDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-              minTrackingConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-            });
-            await holistic.initialize();
-            this.holistic = markRaw(holistic);
-            this.holisticRuntimeKind = HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI;
-          } else {
-            const { FilesetResolver, HolisticLandmarker } =
-              await loadTasksVisionModule();
-
-            if (!tasksVisionFilesetPromise) {
-              tasksVisionFilesetPromise = FilesetResolver.forVisionTasks(
-                TASKS_VISION_WASM_URL
-              );
-            }
-
-            const wasmFileset = await tasksVisionFilesetPromise;
-            const taskOptions = {
-              baseOptions: {
-                modelAssetPath: HOLISTIC_LANDMARKER_MODEL_URL,
-                delegate: resolvedDelegate,
-              },
-              runningMode: "VIDEO",
-              minFaceDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-              minFacePresenceConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-              minPoseDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-              minPosePresenceConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-              minHandLandmarksConfidence: CHAT_MOTION_MIN_CONFIDENCE,
-              outputFaceBlendshapes: false,
-              outputPoseSegmentationMasks: false,
-            };
-
+          const initializeTasksRuntime = async () => {
             this.holistic = markRaw(
-              await HolisticLandmarker.createFromOptions(
-                wasmFileset,
-                taskOptions
-              )
+              await createTasksHolisticLandmarker(resolvedDelegate)
             );
             this.holisticRuntimeKind = HOLISTIC_RUNTIME_KIND.TASKS;
+          };
+
+          if (shouldUseLegacySafariHolistic) {
+            try {
+              const legacyHolisticModule = await loadLegacyHolisticModule();
+              const LegacyHolistic = resolveLegacyHolisticConstructor(
+                legacyHolisticModule
+              );
+
+              if (!LegacyHolistic) {
+                throw new Error(
+                  "Safari 레거시 Holistic 생성자를 찾지 못했습니다."
+                );
+              }
+
+              const holistic = new LegacyHolistic({
+                locateFile: (file) => `${LEGACY_HOLISTIC_ASSET_URL}/${file}`,
+              });
+
+              holistic.setOptions({
+                selfieMode: true,
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                enableSegmentation: false,
+                smoothSegmentation: false,
+                refineFaceLandmarks: true,
+                minDetectionConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+                minTrackingConfidence: CHAT_MOTION_MIN_CONFIDENCE,
+              });
+              await holistic.initialize();
+              this.holistic = markRaw(holistic);
+              this.holisticRuntimeKind = HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI;
+            } catch (legacyError) {
+              console.warn(
+                "Safari 레거시 Holistic 초기화에 실패했습니다. 기본 런타임으로 다시 시도합니다.",
+                legacyError
+              );
+              this.logDebug("ensureHolisticLandmarker:legacySafariFallback", {
+                message: legacyError?.message || String(legacyError),
+              });
+              this.setLoadingState(
+                56,
+                "Safari 레거시 초기화에 실패해 기본 모드로 다시 준비하고 있습니다."
+              );
+              await initializeTasksRuntime();
+            }
+          } else {
+            await initializeTasksRuntime();
           }
           this.holisticDelegate = resolvedDelegate;
           this.holisticDelegateStatus =
@@ -1443,6 +1911,9 @@ export const useChatStore = defineStore('chat', {
           this.holisticFrameInFlight = false;
           this.lastHolisticVideoTime = -1;
           this.holisticTrackingLogged = false;
+          this.motionFaceMissingSince = 0;
+          this.clearMotionRefreshPromptTimer();
+          this.motionRefreshPromptVisible = false;
           this.logDebug("ensureHolisticLandmarker:mainReady", {
             resolvedProfile,
             resolvedDelegate,
@@ -1484,6 +1955,9 @@ export const useChatStore = defineStore('chat', {
         this.holisticFrameInFlight = false;
         this.lastHolisticVideoTime = -1;
         this.holisticTrackingLogged = false;
+        this.motionFaceMissingSince = 0;
+        this.clearMotionRefreshPromptTimer();
+        this.motionRefreshPromptVisible = false;
         this.logDebug("ensureHolisticLandmarker:workerReady");
         return null;
       } catch (error) {
@@ -1536,30 +2010,23 @@ export const useChatStore = defineStore('chat', {
       renderer.setPixelRatio(getChatRenderPixelRatio());
       renderer.domElement.id = "avatarCanvas" + useMainStore().option.matchingRoom;
       const avatarCaptureStrategy = getAvatarCaptureStrategy();
-      const shouldUseCaptureBridgeCanvas =
-        avatarCaptureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS;
-      let avatarCaptureCanvas = null;
-      let avatarCaptureContext = null;
-
-      if (shouldUseCaptureBridgeCanvas) {
-        avatarCaptureCanvas = document.createElement("canvas");
-        avatarCaptureCanvas.className = "avatar-capture-canvas";
-        avatarCaptureCanvas.width = avatarRenderSize.width;
-        avatarCaptureCanvas.height = avatarRenderSize.height;
-        avatarCaptureContext = avatarCaptureCanvas.getContext("2d", {
-          alpha: false,
-        });
-        if (!avatarCaptureContext) {
-          throw new Error("아바타 캡처 캔버스를 초기화할 수 없습니다.");
-        }
-        avatarCaptureContext.fillStyle = CHAT_CAPTURE_BACKGROUND_COLOR;
-        avatarCaptureContext.fillRect(
-          0,
-          0,
-          avatarCaptureCanvas.width,
-          avatarCaptureCanvas.height
-        );
+      const avatarCaptureCanvas = document.createElement("canvas");
+      avatarCaptureCanvas.className = "avatar-capture-canvas";
+      avatarCaptureCanvas.width = avatarRenderSize.width;
+      avatarCaptureCanvas.height = avatarRenderSize.height;
+      const avatarCaptureContext = avatarCaptureCanvas.getContext("2d", {
+        alpha: false,
+      });
+      if (!avatarCaptureContext) {
+        throw new Error("아바타 캡처 캔버스를 초기화할 수 없습니다.");
       }
+      avatarCaptureContext.fillStyle = CHAT_CAPTURE_BACKGROUND_COLOR;
+      avatarCaptureContext.fillRect(
+        0,
+        0,
+        avatarCaptureCanvas.width,
+        avatarCaptureCanvas.height
+      );
 
       const myVideoContainer = document.getElementById("my-video");
       if (!myVideoContainer) {
@@ -1747,16 +2214,33 @@ export const useChatStore = defineStore('chat', {
       return window.localStorage.getItem("ukm-motion-guides") !== "0";
     },
 
-    async startHolistic() {
+    async startHolistic(options = {}) {
+      const {
+        forceRecreate = false,
+        reuseCameraStream = null,
+      } = options;
+      const canReuseCameraStream = Boolean(
+        reuseCameraStream?.getVideoTracks?.().some(
+          (track) => track?.readyState === "live"
+        )
+      );
       console.log("3. Holistic 로드 시작");
       this.logDebug("startHolistic:start", {
         matchingRoom: useMainStore().option.matchingRoom,
+        forceRecreate,
+        reuseCameraStream: canReuseCameraStream,
       });
       this.ready = false;
+      this.motionFaceMissingSince = 0;
+      this.clearMotionRefreshPromptTimer();
+      this.motionRefreshPromptVisible = false;
 
       if (this.camera) {
         try {
-          this.camera.stop();
+          this.camera.stop({
+            stopStream: !canReuseCameraStream,
+            clearVideoElement: !canReuseCameraStream,
+          });
         } catch (error) {
           console.warn("기존 카메라 종료 중 오류가 발생했습니다.", error);
         }
@@ -2319,19 +2803,47 @@ export const useChatStore = defineStore('chat', {
             options.disableHands ?? shouldDisableHandsForCurrentRuntime(),
         });
 
-        if (normalizedResult.faceLandmarks?.length) {
+        if (faceCount > 0) {
           this.holisticEmptyFaceFrames = 0;
-          return;
+          return {
+            faceCount,
+            poseCount,
+            shouldRecoverTasksRuntime: false,
+          };
         }
 
         this.holisticEmptyFaceFrames += 1;
+        if (
+          this.holisticRuntimeKind === HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI &&
+          this.holisticEmptyFaceFrames % CHAT_MOTION_PROCESS_FPS === 0
+        ) {
+          try {
+            this.holistic?.reset?.();
+            this.lastHolisticVideoTime = -1;
+            this.logDebug("startHolistic:legacyRuntimeReset", {
+              emptyFrames: this.holisticEmptyFaceFrames,
+            });
+          } catch (error) {
+            console.warn("Safari 레거시 Holistic 재설정에 실패했습니다.", error);
+          }
+        }
+
+        return {
+          faceCount,
+          poseCount,
+          shouldRecoverTasksRuntime:
+            this.holisticRuntimeKind === HOLISTIC_RUNTIME_KIND.TASKS &&
+            this.isHolisticMainThreadActive() &&
+            this.holisticEmptyFaceFrames >=
+              HOLISTIC_TASKS_RECOVERY_EMPTY_FACE_FRAME_THRESHOLD,
+        };
       };
       let legacyResultsListenerTarget = null;
       const handleLegacyHolisticResult = (rawResult) => {
         try {
           handleHolisticResult(rawResult, { disableHands: true });
         } catch (error) {
-          console.warn("Safari 호환 Holistic 결과 처리에 실패했습니다.", error);
+          console.warn("Safari 레거시 Holistic 결과 처리에 실패했습니다.", error);
         }
       };
 
@@ -2341,9 +2853,14 @@ export const useChatStore = defineStore('chat', {
         const legacySafariActive =
           mainThreadActive &&
           this.holisticRuntimeKind === HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI;
+        const workerLikeMainThreadDetect =
+          mainThreadActive &&
+          !legacySafariActive &&
+          this.holisticRuntimeKind === HOLISTIC_RUNTIME_KIND.TASKS;
         if (
           !videoElement ||
           videoElement.readyState < 2 ||
+          this.holisticRecoveryInFlight ||
           this.motionProfileSwitching ||
           (!workerActive && !mainThreadActive) ||
           !this.motionCheck
@@ -2378,9 +2895,12 @@ export const useChatStore = defineStore('chat', {
             });
             handledByLegacyListener = true;
           } else {
-            result = this.holistic?.detectForVideo(
+            result = await this.detectHolisticMainThread(
               videoElement,
-              detectTimestamp
+              detectTimestamp,
+              {
+                preferBitmapInput: workerLikeMainThreadDetect,
+              }
             );
           }
         } catch (error) {
@@ -2414,7 +2934,10 @@ export const useChatStore = defineStore('chat', {
           if (handledByLegacyListener) {
             return;
           }
-          handleHolisticResult(result);
+          const resultSummary = handleHolisticResult(result);
+          if (resultSummary?.shouldRecoverTasksRuntime) {
+            await this.recoverTaskHolisticTracking("empty-detect-frames");
+          }
         } finally {
           this.holisticFrameInFlight = false;
         }
@@ -2427,7 +2950,9 @@ export const useChatStore = defineStore('chat', {
       });
 
       try {
-        await this.ensureHolisticLandmarker(preferredProfile, guideCanvas);
+        await this.ensureHolisticLandmarker(preferredProfile, guideCanvas, {
+          forceRecreate,
+        });
       } catch (error) {
         await this.handleMotionProcessingFailure(
           preferredProfile,
@@ -2442,9 +2967,18 @@ export const useChatStore = defineStore('chat', {
       }
 
       // Use `Mediapipe` utils to get camera - lower resolution = higher fps
-      this.setLoadingState(70, "카메라를 초기화하고 있습니다.");
-      this.logDebug("startHolistic:cameraCreate");
-      this.camera = this.createTrackingCamera(videoElement, processHolisticFrame);
+      this.setLoadingState(
+        70,
+        canReuseCameraStream
+          ? "모션 인식을 다시 준비하고 있습니다."
+          : "카메라를 초기화하고 있습니다."
+      );
+      this.logDebug("startHolistic:cameraCreate", {
+        reuseCameraStream: canReuseCameraStream,
+      });
+      this.camera = this.createTrackingCamera(videoElement, processHolisticFrame, {
+        initialStream: canReuseCameraStream ? reuseCameraStream : null,
+      });
       await Promise.resolve(this.camera.start());
       await this.waitForVideoReady(videoElement);
       try {
@@ -2464,6 +2998,7 @@ export const useChatStore = defineStore('chat', {
         videoHeight: videoElement.videoHeight,
       });
       this.ready = true;
+      this.updateMotionRefreshPrompt(this.motionFaceCount);
       ////////////////////////
 
       // capture
@@ -2474,91 +3009,147 @@ export const useChatStore = defineStore('chat', {
         height: avatarCanvas.height,
       });
       avatarCanvas.style.display = "inline-block";
-      const captureStrategy = getAvatarCaptureStrategy();
-      const captureCanvas =
-        captureStrategy === AVATAR_CAPTURE_STRATEGY.DIRECT_CANVAS
-          ? avatarCanvas
-          : this.avatarCaptureCanvas || avatarCanvas;
-      if (
-        captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS &&
-        captureCanvas !== avatarCanvas &&
-        this.avatarCaptureContext &&
-        this.avatarCaptureCanvas
-      ) {
-        this.avatarCaptureContext.fillStyle = CHAT_CAPTURE_BACKGROUND_COLOR;
-        this.avatarCaptureContext.fillRect(
-          0,
-          0,
-          this.avatarCaptureCanvas.width,
-          this.avatarCaptureCanvas.height
-        );
-        this.avatarCaptureContext.drawImage(
-          avatarCanvas,
-          0,
-          0,
-          this.avatarCaptureCanvas.width,
-          this.avatarCaptureCanvas.height
-        );
-      }
+      const prepareCaptureSetup = async (captureStrategy) => {
+        const usesBridgeCanvas =
+          captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS;
+        const captureCanvas = usesBridgeCanvas
+          ? this.avatarCaptureCanvas || avatarCanvas
+          : avatarCanvas;
 
-      let testVideo = null;
-      if (captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS) {
-        testVideo = await this.waitForDomElement("test-video", { by: "id" });
-        this.prepareVideoElement(testVideo);
-        this.logDebug("startHolistic:testVideoReady", {
-          testVideoId: "test-video",
-        });
-        if (testVideo.srcObject) {
-          const tracks = testVideo.srcObject.getTracks?.() || [];
-          tracks.forEach((track) => track.stop());
+        if (
+          usesBridgeCanvas &&
+          captureCanvas !== avatarCanvas &&
+          this.avatarCaptureContext &&
+          this.avatarCaptureCanvas
+        ) {
+          this.avatarCaptureContext.fillStyle = CHAT_CAPTURE_BACKGROUND_COLOR;
+          this.avatarCaptureContext.fillRect(
+            0,
+            0,
+            this.avatarCaptureCanvas.width,
+            this.avatarCaptureCanvas.height
+          );
+          this.avatarCaptureContext.drawImage(
+            avatarCanvas,
+            0,
+            0,
+            this.avatarCaptureCanvas.width,
+            this.avatarCaptureCanvas.height
+          );
         }
+
+        let testVideo = null;
+        let captureStream = null;
+
+        try {
+          if (usesBridgeCanvas) {
+            testVideo = await this.waitForDomElement("test-video", { by: "id" });
+            this.prepareVideoElement(testVideo);
+            this.logDebug("startHolistic:testVideoReady", {
+              testVideoId: "test-video",
+              captureStrategy,
+            });
+            stopMediaStreamTracks(testVideo.srcObject);
+            testVideo.srcObject = null;
+          }
+
+          const preferTimedCanvasCapture =
+            captureStrategy === AVATAR_CAPTURE_STRATEGY.DIRECT_CANVAS ||
+            isAppleTouchDevice();
+          captureStream = captureCanvas.captureStream(
+            preferTimedCanvasCapture ? CHAT_CAPTURE_FPS : 0
+          );
+          let captureTrack = captureStream.getVideoTracks?.()[0] || null;
+          let useManualFrames =
+            usesBridgeCanvas &&
+            !preferTimedCanvasCapture &&
+            typeof captureTrack?.requestFrame === "function";
+
+          if (usesBridgeCanvas && !preferTimedCanvasCapture && !useManualFrames) {
+            stopMediaStreamTracks(captureStream);
+            captureStream = captureCanvas.captureStream(CHAT_CAPTURE_FPS);
+            captureTrack = captureStream.getVideoTracks?.()[0] || null;
+          }
+
+          if (!captureTrack) {
+            throw new Error("아바타 캡처 비디오 트랙을 생성하지 못했습니다.");
+          }
+
+          if (testVideo) {
+            if (isAppleTouchDevice()) {
+              await new Promise((resolve) => window.setTimeout(resolve, 0));
+            }
+            testVideo.srcObject = captureStream;
+            if (isAppleTouchDevice()) {
+              await new Promise((resolve) => window.setTimeout(resolve, 0));
+            }
+            try {
+              await testVideo.play();
+            } catch (error) {
+              console.warn("아바타 캡처 비디오 재생 요청에 실패했습니다.", error);
+            }
+          }
+
+          return {
+            captureStrategy,
+            captureCanvas,
+            captureStream,
+            captureTrack,
+            useManualFrames,
+            testVideo,
+          };
+        } catch (error) {
+          stopMediaStreamTracks(captureStream);
+          if (testVideo) {
+            stopMediaStreamTracks(testVideo.srcObject);
+            testVideo.srcObject = null;
+          }
+          throw error;
+        }
+      };
+
+      const preferredCaptureStrategy = getAvatarCaptureStrategy();
+      let captureSetup = null;
+
+      try {
+        captureSetup = await prepareCaptureSetup(preferredCaptureStrategy);
+      } catch (primaryCaptureError) {
+        const fallbackCaptureStrategy =
+          preferredCaptureStrategy === AVATAR_CAPTURE_STRATEGY.DIRECT_CANVAS
+            ? AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS
+            : AVATAR_CAPTURE_STRATEGY.DIRECT_CANVAS;
+
+        this.logDebug("startHolistic:captureFallback", {
+          preferredCaptureStrategy,
+          fallbackCaptureStrategy,
+          message: primaryCaptureError?.message || String(primaryCaptureError),
+        });
+        console.warn(
+          "기본 아바타 캡처 경로에 실패했습니다. 다른 캡처 전략으로 다시 시도합니다.",
+          primaryCaptureError
+        );
+        captureSetup = await prepareCaptureSetup(fallbackCaptureStrategy);
       }
 
-      const preferTimedCanvasCapture =
-        captureStrategy === AVATAR_CAPTURE_STRATEGY.DIRECT_CANVAS ||
-        isAppleTouchDevice();
-      let captureStream = captureCanvas.captureStream(
-        preferTimedCanvasCapture ? CHAT_CAPTURE_FPS : 0
-      );
-      let captureTrack = captureStream.getVideoTracks?.()[0] || null;
-      let useManualFrames =
-        captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS &&
-        !preferTimedCanvasCapture &&
-        typeof captureTrack?.requestFrame === "function";
-
-      if (
-        captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS &&
-        !preferTimedCanvasCapture &&
-        !useManualFrames
-      ) {
-        captureStream.getTracks?.().forEach((track) => track.stop());
-        captureStream = captureCanvas.captureStream(CHAT_CAPTURE_FPS);
-        captureTrack = captureStream.getVideoTracks?.()[0] || null;
-      }
-
-      if (!captureTrack) {
-        throw new Error("아바타 캡처 비디오 트랙을 생성하지 못했습니다.");
-      }
+      const {
+        captureStrategy,
+        captureCanvas,
+        captureTrack,
+        useManualFrames,
+        testVideo,
+      } = captureSetup;
 
       this.avatarCaptureTrack = captureTrack;
       this.avatarCaptureManualFrames = useManualFrames;
-      captureTrack.contentHint = "motion";
+      try {
+        captureTrack.contentHint = "motion";
+      } catch (error) {
+        this.logDebug("startHolistic:captureTrackHintSkipped", {
+          message: error?.message || String(error),
+        });
+      }
       if (useManualFrames) {
         this.avatarCaptureTrack?.requestFrame?.();
-      }
-      if (testVideo) {
-        if (isAppleTouchDevice()) {
-          await new Promise((resolve) => window.setTimeout(resolve, 0));
-        }
-        testVideo.srcObject = captureStream;
-        if (isAppleTouchDevice()) {
-          await new Promise((resolve) => window.setTimeout(resolve, 0));
-        }
-        try {
-          await testVideo.play();
-        } catch (error) {
-          console.warn("아바타 캡처 비디오 재생 요청에 실패했습니다.", error);
-        }
       }
       this.logDebug("startHolistic:captureStreamReady", {
         captureStrategy,
@@ -2566,8 +3157,7 @@ export const useChatStore = defineStore('chat', {
         captureCanvasWidth: captureCanvas?.width || 0,
         captureCanvasHeight: captureCanvas?.height || 0,
         captureManualFrames: useManualFrames,
-        usesCapturePreviewVideo:
-          captureStrategy === AVATAR_CAPTURE_STRATEGY.BRIDGE_CANVAS,
+        usesCapturePreviewVideo: Boolean(testVideo),
         trackCount:
           testVideo?.srcObject?.getVideoTracks?.().length ||
           (captureTrack ? 1 : 0),

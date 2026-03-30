@@ -46,6 +46,46 @@
                   class="tracking-gpu-canvas tracking-gpu-canvas-hidden"
                 ></canvas>
               </div>
+              <div
+                v-if="chat.motionCheck"
+                :class="[
+                  'motion-face-status',
+                  chat.motionFaceCount > 0
+                    ? 'motion-face-status-active'
+                    : 'motion-face-status-inactive',
+                ]"
+              >
+                {{
+                  chat.motionRestartInFlight
+                    ? "얼굴 확인 중"
+                    : chat.motionFaceCount > 0
+                    ? "얼굴 인식됨"
+                    : "얼굴 미인식"
+                }}
+              </div>
+              <div
+                v-if="
+                  chat.motionRefreshPromptVisible ||
+                  chat.motionRestartInFlight
+                "
+                class="motion-refresh-overlay"
+              >
+                <p class="motion-refresh-message">
+                  얼굴 인식이 멈췄다면 모션을 새로고침해 주세요.
+                </p>
+                <button
+                  type="button"
+                  class="motion-refresh-button"
+                  :disabled="chat.motionRestartInFlight"
+                  @click="restartMotionTracking"
+                >
+                  {{
+                    chat.motionRestartInFlight
+                      ? "새로고침 중..."
+                      : "모션 새로고침"
+                  }}
+                </button>
+              </div>
             </div>
             <div class="video-card-footer">
               <p class="nickName">{{ account.currentUser.nickname }}</p>
@@ -435,6 +475,9 @@ export default {
     this.chat.leaveSession({ navigate: false }).finally(() => next());
   },
   methods: {
+    async restartMotionTracking() {
+      await this.chat.restartMotionTrackingSession();
+    },
     beginSessionStartup() {
       if (this.joinSessionStarted) {
         return;
@@ -1177,6 +1220,88 @@ h1 {
     inset 0 0 0 1px rgba(140, 150, 186, 0.16);
 }
 
+.motion-refresh-overlay {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  max-width: min(280px, calc(100% - 32px));
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  background: rgba(20, 27, 42, 0.78);
+  box-shadow:
+    0 18px 34px rgba(11, 17, 30, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.motion-face-status {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-align: center;
+  box-shadow:
+    0 10px 24px rgba(15, 23, 38, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.motion-face-status-active {
+  background: rgba(21, 132, 82, 0.84);
+  color: #f3fff8;
+}
+
+.motion-face-status-inactive {
+  background: rgba(173, 50, 58, 0.86);
+  color: #fff7f8;
+}
+
+.motion-refresh-message {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(245, 248, 255, 0.88);
+  text-align: right;
+}
+
+.motion-refresh-button {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 16px;
+  min-height: 42px;
+  background: linear-gradient(135deg, #f8c65c, #f79f3a);
+  color: #241400;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  box-shadow:
+    0 12px 24px rgba(247, 159, 58, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.motion-refresh-button:disabled {
+  opacity: 0.68;
+  cursor: progress;
+}
+
 .video-item-remote .video-stage {
   background:
     radial-gradient(circle at top, rgba(163, 223, 242, 0.34), transparent 40%),
@@ -1409,6 +1534,23 @@ h1 {
 
   .video-stage {
     border-radius: 22px;
+  }
+
+  .motion-refresh-overlay {
+    right: 12px;
+    top: 12px;
+    left: auto;
+    max-width: min(240px, calc(100% - 108px));
+    align-items: flex-end;
+  }
+
+  .motion-face-status {
+    left: 12px;
+    top: 12px;
+  }
+
+  .motion-refresh-message {
+    text-align: right;
   }
 
   .video-card-footer {

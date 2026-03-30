@@ -318,6 +318,13 @@ export default {
         return "설정을 적용하고 있습니다.";
       }
 
+      if (
+        this.chat.motionCheck &&
+        this.chat.holisticRuntimeKind === "legacy-safari"
+      ) {
+        return "현재 Safari 레거시 Holistic 경로를 사용 중입니다.";
+      }
+
       if (this.chat.holisticDelegateStatus === "worker-unavailable") {
         return "이 기기에서는 브라우저 + CPU를 사용해 주세요.";
       }
