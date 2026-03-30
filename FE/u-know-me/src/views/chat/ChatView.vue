@@ -63,29 +63,6 @@
                     : "얼굴 미인식"
                 }}
               </div>
-              <div
-                v-if="
-                  chat.motionRefreshPromptVisible ||
-                  chat.motionRestartInFlight
-                "
-                class="motion-refresh-overlay"
-              >
-                <p class="motion-refresh-message">
-                  얼굴 인식이 멈췄다면 모션을 새로고침해 주세요.
-                </p>
-                <button
-                  type="button"
-                  class="motion-refresh-button"
-                  :disabled="chat.motionRestartInFlight"
-                  @click="restartMotionTracking"
-                >
-                  {{
-                    chat.motionRestartInFlight
-                      ? "새로고침 중..."
-                      : "모션 새로고침"
-                  }}
-                </button>
-              </div>
             </div>
             <div class="video-card-footer">
               <p class="nickName">{{ account.currentUser.nickname }}</p>
@@ -100,6 +77,32 @@
           />
         </div>
 
+      </div>
+      <div
+        v-if="
+          chat.motionRefreshPromptVisible ||
+          chat.motionRestartInFlight
+        "
+        class="motion-refresh-floating"
+        :style="floatingRefreshStyle"
+      >
+        <div class="motion-refresh-overlay">
+          <p class="motion-refresh-message">
+            얼굴 인식이 멈췄다면 모션을 새로고침해 주세요.
+          </p>
+          <button
+            type="button"
+            class="motion-refresh-button"
+            :disabled="chat.motionRestartInFlight"
+            @click="restartMotionTracking"
+          >
+            {{
+              chat.motionRestartInFlight
+                ? "새로고침 중..."
+                : "모션 새로고침"
+            }}
+          </button>
+        </div>
       </div>
       <div
         v-show="showMonitorPanel"
@@ -362,6 +365,14 @@ export default {
       }
 
       return Object.keys(style).length > 0 ? style : null;
+    },
+    floatingRefreshStyle() {
+      const baseStyle = this.floatingMonitorStyle || {};
+
+      return {
+        transform: baseStyle.transform || undefined,
+        width: baseStyle.width || "240px",
+      };
     },
   },
 
@@ -1220,16 +1231,26 @@ h1 {
     inset 0 0 0 1px rgba(140, 150, 186, 0.16);
 }
 
+.motion-refresh-floating {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 11;
+  width: 240px;
+  max-width: 100%;
+  pointer-events: none;
+}
+
 .motion-refresh-overlay {
   position: absolute;
-  right: 16px;
-  top: 16px;
-  z-index: 3;
+  right: 0;
+  bottom: calc(100% + 12px);
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
-  max-width: min(280px, calc(100% - 32px));
+  max-width: min(280px, calc(100vw - 24px));
   padding: 14px 14px 12px;
   border-radius: 18px;
   background: rgba(20, 27, 42, 0.78);
@@ -1237,6 +1258,7 @@ h1 {
     0 18px 34px rgba(11, 17, 30, 0.28),
     inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(14px);
+  pointer-events: auto;
 }
 
 .motion-face-status {
@@ -1536,12 +1558,13 @@ h1 {
     border-radius: 22px;
   }
 
+  .motion-refresh-floating {
+    max-width: calc(100% - 24px);
+  }
+
   .motion-refresh-overlay {
-    right: 12px;
-    top: 12px;
-    left: auto;
-    max-width: min(240px, calc(100% - 108px));
-    align-items: flex-end;
+    bottom: calc(100% + 10px);
+    max-width: min(240px, calc(100vw - 24px));
   }
 
   .motion-face-status {
