@@ -25,6 +25,7 @@
                   'tracking-preview',
                   'tracking-preview-primary',
                   'tracking-preview-hidden',
+                  { 'tracking-preview-ios-safari-proxy': isIOSSafari },
                   { 'tracking-preview-solo': chat.soloMode },
                 ]"
               >
@@ -403,6 +404,7 @@ export default {
         height: viewportHeight,
       },
       joinSessionStarted: false,
+      isIOSSafari: isIOSSafariBrowser(),
     };
   },
   mounted() {
@@ -1425,6 +1427,15 @@ h1 {
   opacity: 0;
   pointer-events: none;
   overflow: hidden;
+}
+.tracking-preview-hidden.tracking-preview-ios-safari-proxy {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.001;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: transform;
 }
 .tracking-gpu-canvas-hidden {
   position: absolute;

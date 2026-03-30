@@ -1152,6 +1152,8 @@ export const useChatStore = defineStore('chat', {
       const shouldShowGuides =
         trackingActive && this.shouldRenderMotionGuides();
       const debugEnabled = this.refreshTrackingDebugPreviewFlag();
+      const primaryVideoVisibility =
+        isIOSSafariBrowser() && trackingActive ? "visible" : "hidden";
       const {
         debugPreview,
         primaryVideo,
@@ -1164,7 +1166,7 @@ export const useChatStore = defineStore('chat', {
       this.setElementDisplay(primaryVideo, trackingActive ? "block" : "none");
       this.setElementVisibility(
         primaryVideo,
-        "hidden"
+        primaryVideoVisibility
       );
 
       this.setElementDisplay(
@@ -2857,10 +2859,16 @@ export const useChatStore = defineStore('chat', {
         const legacySafariActive =
           mainThreadActive &&
           this.holisticRuntimeKind === HOLISTIC_RUNTIME_KIND.LEGACY_SAFARI;
+        const safariTasksMainThreadDetect =
+          mainThreadActive &&
+          !legacySafariActive &&
+          this.holisticRuntimeKind === HOLISTIC_RUNTIME_KIND.TASKS &&
+          isIOSSafariBrowser();
         const workerLikeMainThreadDetect =
           mainThreadActive &&
           !legacySafariActive &&
-          this.holisticRuntimeKind === HOLISTIC_RUNTIME_KIND.TASKS;
+          this.holisticRuntimeKind === HOLISTIC_RUNTIME_KIND.TASKS &&
+          !safariTasksMainThreadDetect;
         if (
           !videoElement ||
           videoElement.readyState < 2 ||
@@ -2873,7 +2881,11 @@ export const useChatStore = defineStore('chat', {
         }
 
         const currentVideoTime = videoElement.currentTime;
-        if (this.holisticFrameInFlight || currentVideoTime === this.lastHolisticVideoTime) {
+        const shouldSkipSameVideoTime =
+          !safariTasksMainThreadDetect &&
+          currentVideoTime === this.lastHolisticVideoTime;
+
+        if (this.holisticFrameInFlight || shouldSkipSameVideoTime) {
           return;
         }
 
