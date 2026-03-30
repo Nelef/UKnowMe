@@ -214,6 +214,9 @@
       >
         <section
           class="motion-sheet-panel"
+          :class="{
+            'motion-sheet-panel-guard': motionSheetInteractionBlocked,
+          }"
           role="dialog"
           aria-modal="true"
           aria-label="모션 인식 설정"
@@ -295,6 +298,8 @@ export default {
       chatSubWindowResizeHandler: null,
       lastMotionTriggerAt: 0,
       lastMotionTriggerType: "",
+      motionSheetInteractionBlocked: false,
+      motionSheetInteractionBlockTimer: null,
     };
   },
   setup() {
@@ -316,6 +321,10 @@ export default {
     motionSettingsHint() {
       if (this.chat.motionProfileSwitching) {
         return "설정을 적용하고 있습니다.";
+      }
+
+      if (this.chat.safariMainCpuFailureGuideVisible) {
+        return "Safari 탭 새로고침으로 안 풀리면 Safari를 완전히 종료 후 다시 실행해 주세요.";
       }
 
       if (this.chat.holisticDelegateStatus === "worker-unavailable") {
@@ -443,6 +452,11 @@ export default {
       window.cancelAnimationFrame(this.chatSubResizeFrame);
       this.chatSubResizeFrame = null;
     }
+
+    if (this.motionSheetInteractionBlockTimer) {
+      window.clearTimeout(this.motionSheetInteractionBlockTimer);
+      this.motionSheetInteractionBlockTimer = null;
+    }
   },
   methods: {
     scheduleChatSubSpacerSync() {
@@ -555,9 +569,25 @@ export default {
 
       this.lastMotionTriggerAt = now;
       this.lastMotionTriggerType = eventType;
+      this.motionSheetInteractionBlocked = true;
+      if (this.motionSheetInteractionBlockTimer) {
+        window.clearTimeout(this.motionSheetInteractionBlockTimer);
+      }
+      this.motionSheetInteractionBlockTimer = window.setTimeout(() => {
+        this.motionSheetInteractionBlocked = false;
+        this.motionSheetInteractionBlockTimer = null;
+      }, 320);
       this.chat.motionClick();
     },
     async selectMotionProfile(profile) {
+      if (this.motionSheetInteractionBlocked) {
+        return;
+      }
+      this.chat.closeMotionSettings();
+      if (profile === "main-cpu") {
+        await this.chat.restartMotionTrackingSession({ profile });
+        return;
+      }
       await this.chat.applyMotionProcessingProfile(profile);
     },
   },
@@ -800,17 +830,24 @@ export default {
   position: fixed;
   inset: 0;
   z-index: 40;
-  padding: 24px;
+  box-sizing: border-box;
+  padding:
+    max(24px, env(safe-area-inset-top))
+    max(24px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom))
+    max(24px, env(safe-area-inset-left));
   display: grid;
   place-items: center;
   background:
     radial-gradient(circle at top, rgba(255, 255, 255, 0.3), transparent 42%),
     rgba(24, 15, 41, 0.36);
   backdrop-filter: blur(18px);
+  overflow: auto;
 }
 
 .motion-sheet-panel {
-  width: min(100%, 560px);
+  box-sizing: border-box;
+  width: min(100%, 548px);
   max-height: min(86dvh, 780px);
   padding: 28px;
   border-radius: 28px;
@@ -822,6 +859,11 @@ export default {
   flex-direction: column;
   gap: 20px;
   overflow: hidden;
+}
+
+.motion-sheet-panel-guard .motion-sheet-option,
+.motion-sheet-panel-guard .motion-sheet-close {
+  pointer-events: none;
 }
 
 .motion-sheet-header {
@@ -837,7 +879,7 @@ export default {
 
 .motion-sheet-copy strong {
   display: block;
-  font-size: 24px;
+  font-size: clamp(21px, 2vw, 24px);
   font-weight: 900;
   line-height: 1.1;
   color: #241936;
@@ -848,7 +890,7 @@ export default {
 
 .motion-sheet-copy p {
   margin: 10px 0 0;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
   color: rgba(36, 25, 54, 0.72);
   white-space: normal;
@@ -862,7 +904,7 @@ export default {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.68);
   border: 1px solid rgba(134, 92, 195, 0.14);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
   color: rgba(60, 40, 89, 0.78);
   white-space: normal;
@@ -913,7 +955,7 @@ export default {
   flex-direction: column;
   flex: 1 1 auto;
   align-items: stretch;
-  gap: 14px;
+  gap: 12px;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -927,8 +969,8 @@ export default {
   max-width: none;
   box-sizing: border-box;
   border: 1px solid rgba(134, 92, 195, 0.12);
-  border-radius: 24px;
-  padding: 22px 22px 20px;
+  border-radius: 22px;
+  padding: 20px 20px 18px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 241, 255, 0.94));
   color: #241936;
@@ -939,7 +981,7 @@ export default {
   align-content: start;
   align-items: start;
   justify-items: stretch;
-  gap: 12px;
+  gap: 10px;
   box-shadow:
     0 12px 32px rgba(96, 69, 148, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
@@ -977,28 +1019,27 @@ export default {
 }
 
 .motion-sheet-option-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 10px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
   min-width: 0;
 }
 
 .motion-sheet-option-title {
   display: block;
   min-width: 0;
-  flex: 1 1 220px;
-  font-size: 19px;
+  font-size: clamp(16px, 1.7vw, 19px);
   font-weight: 900;
-  line-height: 1.3;
-  white-space: normal;
-  word-break: normal;
-  overflow-wrap: anywhere;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .motion-sheet-option-description {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
   color: rgba(36, 25, 54, 0.72);
   white-space: normal;
@@ -1010,20 +1051,18 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 28px;
+  min-height: 26px;
   padding: 5px 10px;
   border-radius: 999px;
   background: rgba(74, 45, 116, 0.1);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #52307d;
   flex-shrink: 0;
   max-width: 100%;
-  white-space: normal;
-  word-break: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 .motion-sheet-option-reason {
@@ -1255,13 +1294,17 @@ export default {
 
   .motion-sheet-backdrop {
     align-items: end;
-    padding: 16px;
+    padding:
+      max(16px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
   }
 
   .motion-sheet-panel {
-    width: min(100%, 520px);
+    width: min(100%, 540px);
     max-height: min(88dvh, 760px);
-    padding: 24px 20px 18px;
+    padding: 24px 20px calc(18px + env(safe-area-inset-bottom));
     border-radius: 26px;
   }
 }
@@ -1300,24 +1343,27 @@ export default {
   }
 
   .motion-sheet-backdrop {
-    padding: 12px;
+    padding:
+      max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
   }
 
   .motion-sheet-panel {
     width: 100%;
     max-height: min(88dvh, 720px);
-    padding: 22px 16px 16px;
+    padding: 20px 16px calc(16px + env(safe-area-inset-bottom));
     border-radius: 24px;
     gap: 14px;
   }
 
   .motion-sheet-header {
-    flex-direction: column;
-    align-items: stretch;
+    gap: 12px;
   }
 
   .motion-sheet-copy strong {
-    font-size: 21px;
+    font-size: 20px;
   }
 
   .motion-sheet-close {
@@ -1326,16 +1372,54 @@ export default {
   }
 
   .motion-sheet-option {
-    padding: 20px 18px 18px;
+    padding: 18px 16px 16px;
   }
 
   .motion-sheet-option-head {
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px 10px;
   }
 
   .motion-sheet-option-title {
-    flex-basis: 100%;
+    font-size: 16px;
+  }
+
+  .motion-sheet-option-description {
+    font-size: 12px;
+  }
+
+  .motion-sheet-option-badge {
+    min-height: 24px;
+    padding: 4px 9px;
+    font-size: 9px;
+  }
+}
+
+@media screen and (max-width: 380px) {
+  .motion-sheet-panel {
+    padding: 18px 14px calc(14px + env(safe-area-inset-bottom));
+    border-radius: 22px;
+  }
+
+  .motion-sheet-copy strong {
     font-size: 18px;
+  }
+
+  .motion-sheet-copy p,
+  .motion-sheet-note {
+    font-size: 12px;
+  }
+
+  .motion-sheet-option {
+    padding: 16px 14px 14px;
+  }
+
+  .motion-sheet-option-head {
+    gap: 6px 8px;
+  }
+
+  .motion-sheet-option-title {
+    font-size: 15px;
   }
 }
 </style>

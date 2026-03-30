@@ -245,6 +245,9 @@ const getHolisticDelegateForProfile = (profile) =>
     ? "GPU"
     : "CPU";
 
+const IOS_SAFARI_MAIN_CPU_FAILURE_GUIDE =
+  "브라우저 + CPU가 실패했습니다. Safari 탭 새로고침으로 복구되지 않으면 Safari를 완전히 종료 후 다시 실행해 주세요.";
+
 const loadTasksVisionModule = async () => {
   if (!tasksVisionModulePromise) {
     tasksVisionModulePromise = import(
@@ -486,6 +489,12 @@ export const useChatStore = defineStore('chat', {
         switching: state.motionProfileSwitching,
         runtimeKind: state.holisticRuntimeKind,
       });
+    },
+    safariMainCpuFailureGuideVisible(state) {
+      return (
+        isIOSSafariBrowser() &&
+        state.holisticDelegateStatus === "main-cpu-failed"
+      );
     },
   },
   actions: {
@@ -1330,9 +1339,10 @@ export const useChatStore = defineStore('chat', {
       this.ready = false;
       this.updateTrackingPreviewVisibility(this.motionCheck);
     },
-    async restartMotionTrackingSession() {
+    async restartMotionTrackingSession(options = {}) {
+      const { profile = null } = options;
       const resolvedProfile = normalizeHolisticProcessingProfile(
-        this.motionAppliedProfile || this.motionRequestedProfile
+        profile || this.motionAppliedProfile || this.motionRequestedProfile
       );
       const videoElement = document.querySelector(".tracking-primary-video");
       const retainedCameraStream =
@@ -1354,6 +1364,7 @@ export const useChatStore = defineStore('chat', {
 
       this.motionRestartInFlight = true;
       this.motionProfileSwitching = true;
+      this.motionSettingsOpen = false;
       this.motionRefreshPromptVisible = false;
       this.logDebug("motion:manualRestartStart", {
         resolvedProfile,
@@ -1550,6 +1561,13 @@ export const useChatStore = defineStore('chat', {
         reason,
         message: error?.message || null,
       });
+
+      if (
+        normalizedProfile === HOLISTIC_PROCESSING_PROFILE.MAIN_CPU &&
+        isIOSSafariBrowser()
+      ) {
+        this.systemMessagePrint(IOS_SAFARI_MAIN_CPU_FAILURE_GUIDE);
+      }
     },
     async applyMotionProcessingProfile(profile, options = {}) {
       const normalizedProfile = normalizeHolisticProcessingProfile(profile);

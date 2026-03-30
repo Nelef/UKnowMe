@@ -1,110 +1,111 @@
 # iOS Safari 모션 인식 트러블슈팅
 
-## 배경
+기준 커밋: `113b34a` `iOS 사파리 모션 입력 비디오 경로를 보정`
 
-- 현재 채팅 입장 흐름은 `카메라 입력 -> MediaPipe 추론 -> Kalidokit 리깅 -> VRM 렌더링 -> canvas captureStream -> LiveKit publish` 순서로 구성되어 있다.
-- iOS Chrome에서는 현재 구현이 대체로 동작했지만, iOS Safari에서는 아래 문제가 반복됐다.
-  - 첫 입장 시 로딩 시작 자체가 안 되는 경우
-  - 아바타 캡처가 첫 프레임만 송출되고 멈추는 경우
-  - `브라우저 + CPU` 모드에서 손 인식이 불안정하거나 사라지는 경우
+## 증상
+
+- iOS Safari에서 카메라 UI는 계속 움직이는데, 모션 인식은 첫 얼굴 위치 근처에 고정된 것처럼 보일 수 있었다.
+- 이때 화면의 `얼굴 인식됨` 상태가 유지되거나, 얼굴 좌표가 사실상 갱신되지 않는 증상이 있었다.
+- 같은 세션에서 `모션 새로고침`을 누르면 다시 정상 동작하는 경우가 많았다.
+
+## 현재 구조
+
+- 모션 파이프라인은 대략 `camera stream -> tracking video -> MediaPipe -> Kalidokit -> VRM -> canvas captureStream -> LiveKit publish` 순서다.
+- 사용자가 보는 프리뷰와 추론 입력은 같은 엘리먼트가 아니다.
+  - 추론 입력: `.tracking-primary-video`
+  - 디버그 프리뷰: `.tracking-debug-video`
+
+즉, 프리뷰가 실시간으로 보인다고 해서 추론 입력도 정상 프레임을 계속 받고 있다고 볼 수는 없다.
 
 ## 확인한 사실
 
-### 1. iOS Chrome과 iOS Safari는 둘 다 WebKit이지만 동작은 같지 않다
+### 1. 현재 Safari는 legacy Holistic 경로를 쓰지 않는다
 
-- 엔진 계층은 같아도 실제 앱의 미디어 정책, autoplay 처리, `srcObject` 연결 시점, canvas 기반 스트림 처리 안정성은 완전히 동일하다고 가정하면 안 된다.
-- 특히 Safari 앱은 `video.play()`와 inline/autoplay 흐름에서 더 민감하게 실패했다.
+- 현재 코드에서 `ENABLE_LEGACY_SAFARI_HOLISTIC_RUNTIME = false` 이다.
+- 따라서 Safari도 기본적으로 `@mediapipe/tasks-vision`의 `HolisticLandmarker.detectForVideo()` 경로를 사용한다.
+- 과거에 legacy `@mediapipe/holistic` 경로를 실험했지만, 현재 운영 판단은 아니다.
 
-참고:
-- https://webkit.org/blog/6784/new-video-policies-for-ios/
-- https://webkit.org/blog/7763/a-closer-look-into-webrtc/
+### 2. 문제는 카메라 정지보다 추론 입력 video 쪽일 가능성이 높다
 
-### 2. 현재 구현은 최신 Tasks Vision 경로였다
+- 디버그 프리뷰는 `sourceVideoElement.srcObject`를 별도 `.tracking-debug-video`에 붙여 재생한다.
+- 반면 모션 추론은 숨겨진 `.tracking-primary-video`를 기준으로 돈다.
+- 따라서 화면상 카메라가 움직여도, 추론 입력 video가 Safari에서 실제 프레임을 계속 내지 못하면 얼굴 좌표는 멈춘 것처럼 보일 수 있다.
 
-- 우리 구현은 `@mediapipe/tasks-vision`의 `HolisticLandmarker.detectForVideo()`를 사용하고 있었다.
-- Kalidokit 공식 예제는 이 경로가 아니라 legacy `@mediapipe/holistic`의 `Holistic.onResults()` + `send()` 흐름을 사용한다.
+### 3. `currentTime` 기반 스킵이 Safari에서 문제를 증폭시킬 수 있었다
 
-참고:
-- https://github.com/yeemachine/kalidokit
-- https://chuoling.github.io/mediapipe/solutions/holistic.html
+- 추론 루프는 기본적으로 `currentVideoTime === lastHolisticVideoTime`이면 프레임을 스킵한다.
+- Safari에서 추론 입력 video의 `currentTime` 갱신이 꼬이면, 이후 detect loop가 계속 건너뛰어질 수 있다.
+- 이 경우 마지막 성공 결과가 남아서 `얼굴 인식됨` 상태가 계속 유지될 수 있다.
 
-### 3. Safari에서는 canvas/capture 쪽도 별도 리스크가 있었다
+### 4. “숨겨진 tracking video” 자체가 Safari에서 리스크였다
 
-- WebKit에는 `canvas.captureStream()`과 WebGL/canvas 프레임 갱신 관련 이슈가 오래 존재한다.
-- 실제로 Safari에서 "첫 화면만 잡히고 이후 프레임이 안 밀리는" 증상은 모션 인식 이전 단계뿐 아니라 publish/capture 단계에서도 재현됐다.
+- 기존 `.tracking-preview-hidden`은 `1px x 1px`, `opacity: 0` 상태였다.
+- 거기에 실제 입력 video까지 `visibility: hidden`으로 유지되고 있었다.
+- Safari에서는 이런 offscreen/hidden video가 프레임 갱신 대상에서 불안정해질 가능성이 높다고 판단했다.
 
-참고:
-- https://bugs.webkit.org/show_bug.cgi?id=181663
+### 5. 수동 새로고침이 잘 되는 이유는 모델보다 입력 상태를 다시 세우기 때문이다
 
-### 4. 손 추적은 Safari에서 특히 더 보수적으로 보는 게 안전하다
+- `모션 새로고침`은 카메라/추론 세션을 다시 초기화하고 `startHolistic()`를 다시 탄다.
+- 따라서 수동 새로고침 성공은 “Safari는 반드시 legacy 모델을 써야 한다”보다 “초기 시작 시 추론 입력 video 상태가 꼬인다”는 가설과 더 잘 맞는다.
 
-- Kalidokit 예제는 Holistic 기반 손 리깅도 제공하지만, Safari 쪽 안정성은 별개 문제다.
-- 이번 트러블슈팅 과정에서는 손이 가장 흔들리는 축이었다.
-- 따라서 Safari 전용 경로에서는 손을 과감히 빼고 `얼굴 + 상체`만 유지하는 편이 전체 안정성에 더 유리하다고 판단했다.
+## 시도했지만 현재 결론으로 채택하지 않은 내용
 
-참고:
-- https://github.com/google-ai-edge/mediapipe/issues/3303
+### 1. Safari는 무조건 legacy `@mediapipe/holistic`을 써야 한다
 
-## 시도한 내용
+- 한때 이 경로를 붙여서 테스트했지만, 현재 코드 기준 기본 판단은 아니다.
+- legacy 경로는 실험용/폴백 성격으로만 남아 있었고, 현재는 비활성화 상태다.
+- 따라서 이 문서에서는 legacy 경로를 “현재 결정”으로 보지 않는다.
 
-### 1. capture 경로 변경
+### 2. 손 추적을 끄는 것이 핵심 해결책이다
 
-- WebGL canvas 직접 캡처
-- 2D bridge canvas 경유
-- 수동 `requestFrame()`
-- 고정 FPS `captureStream()`
+- Safari에서 손이 더 흔들릴 수는 있지만, 이번 증상의 본질은 “손 인식”보다 “얼굴/포즈 입력 프레임 갱신”에 더 가까웠다.
+- 현재 운영 결론을 “Safari는 손을 꺼야 한다”로 정리하지 않는다.
 
-결과:
-- iOS Chrome에서는 일부 조합이 통과했지만, Safari에서는 첫 프레임 고정 문제가 남았다.
+### 3. captureStream 또는 publish 단계가 현재 증상의 1차 원인이다
 
-### 2. 시작 시점 변경
+- Safari에서 capture/publish 계층도 별도 리스크는 있다.
+- 다만 이번에 반복된 “첫 얼굴 위치에 고정되는” 문제는 그보다 앞단의 tracking input / detect loop 쪽 설명이 더 강하다.
+- 그래서 현 시점 문서에서는 capture/publish를 현재 1차 원인으로 쓰지 않는다.
 
-- Safari에서 사용자 탭 이후 시작하도록 바꿔보기도 했다.
-- 미디어 부트 관점에서는 안전했지만, 최종적으로는 제품 흐름상 자동 시작이 더 적합하다고 판단했다.
-- 현재는 다시 Safari도 자동 시작이다.
+## 현재까지 반영한 수정
 
-### 3. MediaPipe 런타임 분리
+### 1. Safari main-thread Tasks 경로에서 `currentTime` 동일값만으로 detect를 스킵하지 않도록 조정
 
-- 기존: 모든 브라우저가 가능한 한 `tasks-vision` 또는 worker 경로 사용
-- 현재:
-  - iOS Chrome / Android / Desktop: 기존 경로 유지
-  - iOS Safari: legacy `@mediapipe/holistic` 경로 사용
+- iOS Safari + Tasks + main-thread일 때는 `currentTime`이 같아 보여도 detect loop를 막지 않도록 변경했다.
+- 목적은 Safari에서 숨겨진 입력 video의 시간값이 고정된 듯 보여도 추론이 완전히 멈추지 않게 하는 것이다.
 
-## 현재 결정
+### 2. Safari의 tracking input wrapper를 1px 숨김 대신 “실제 크기의 투명 레이어”로 변경
 
-### iOS Chrome
+- iOS Safari에서는 `.tracking-preview-primary`를 1px 오프스크린 취급이 아니라, 실제 크기를 가진 투명 레이어로 유지한다.
+- 목적은 Safari가 추론 입력 video를 계속 렌더 대상처럼 다루게 만드는 것이다.
 
-- 현행 구현 유지
-- `tasks-vision` 및 기존 모션 설정 흐름 사용
+### 3. Safari에서 실제 tracking input video를 `visibility: visible`로 유지
 
-### iOS Safari
+- 기존에는 추론 입력 video 자체가 `visibility: hidden`이었다.
+- 현재는 iOS Safari에서 tracking active 상태라면 입력 video는 `visible`로 두고, 부모 레이어 투명도로만 숨긴다.
+- 이게 현재까지 가장 직접적인 수정이다.
 
-- `브라우저 + CPU` 선택 시 legacy `@mediapipe/holistic` 사용
-- Kalidokit은 `Face.solve()` + `Pose.solve()`만 사용
-- 손 리깅은 끈다
-- worker 경로는 사용하지 않는다
-- 세션은 자동 시작한다
+## 관련 커밋 메모
 
-## 코드 반영 포인트
+- `607e1b9` `iOS 사파리 모션 호환 경로 추가`
+  Safari 전용 경로 실험 시작
+- `d89b404` `모션 새로고침 UX와 런타임 재로딩 조정`
+  수동 새로고침 흐름 정비
+- `ea4b003` `사파리에서도 기본 모션 모델을 사용하도록 조정`
+  Safari를 다시 기본 Tasks 모델 경로로 복귀
+- `113b34a` `iOS 사파리 모션 입력 비디오 경로를 보정`
+  tracking input video와 detect loop 쪽 수정
 
-- `src/stores/chat/chat.js`
-  - Safari 감지
-  - Safari 전용 runtime kind 분리
-  - legacy Holistic 로더 추가
-  - Safari에서 hand 비활성화
-- `src/views/chat/ChatView.vue`
-  - Safari 자동 시작 유지
-- `public/mediapipe/holistic`
-  - legacy Holistic 런타임 자산 복사
+## 현재 남아 있는 가설
 
-## 남은 리스크
+아직 기기 실측으로 완전히 닫히지 않은 가설은 아래다.
 
-- Safari에서 face/pose 추적이 살아도, 최종 publish 단계는 별도로 다시 검증해야 한다.
-- legacy Holistic 자산 크기가 커서 초기 로드 비용이 증가한다.
-- 손을 완전히 끈 상태이므로 Safari에서는 제스처 표현력이 Chrome보다 제한된다.
+- Safari 초기 진입 시 `video.play()`는 성공해도, 추론 입력 video가 실제 라이브 프레임을 받기 전 detect loop가 먼저 돈다.
+- 수동 새로고침은 사용자 gesture 이후 실행되면서 이 상태를 다시 정상화한다.
+- 만약 현재 수정 후에도 동일 증상이 남는다면, 다음 단계는 “detect loop 시작 전에 tracking input video의 프레임이 실제로 한 번 이상 전진했는지 확인하는 대기/계측”을 넣는 것이다.
 
-## 다음에 보면 좋은 지점
+## 다음 점검 포인트
 
-- Safari에서 로컬 `test-video`가 실제로 프레임 갱신되는지
-- LiveKit publish 직전 트랙이 정상적으로 프레임을 내보내는지
-- 필요하면 Safari 전용 저해상도 카메라 프로파일 추가
+- iOS Safari에서 초기 입장 직후 `.tracking-primary-video`의 `currentTime`이 실제로 증가하는지 확인
+- 첫 detect 직전과 첫 detect 성공 후의 `readyState`, `videoWidth`, `videoHeight`, `currentTime` 로그 비교
+- 수동 `모션 새로고침` 전후 같은 항목을 비교해 초기 시작과 무엇이 달라지는지 확인
