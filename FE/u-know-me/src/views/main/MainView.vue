@@ -24,7 +24,7 @@ export default {
     const account = useAccountStore();
 
     onMounted(() => {
-      account.fetchCurrentUser();
+      account.fetchCurrentUser({ forceTestAvatarOnMainEntry: true });
     });
 
     return { main, account };

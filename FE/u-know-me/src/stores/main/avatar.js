@@ -124,13 +124,15 @@ export const useAvatarStore = defineStore('avatar', {
     },
     load(id, options = {}) {
       const { persist = true } = options;
+      const account = useAccountStore();
+      const resolvedAvatarId = id;
 
       if (persist) {
-        const idJson = { avatarSeq: id };
-        useAccountStore().changeAvatar(idJson);
+        const idJson = { avatarSeq: resolvedAvatarId };
+        account.changeAvatar(idJson);
 
-        if (useAccountStore().currentUser?.avatar) {
-          useAccountStore().currentUser.avatar.seq = id;
+        if (account.currentUser?.avatar) {
+          account.currentUser.avatar.seq = resolvedAvatarId;
         }
       }
 
@@ -382,7 +384,7 @@ export const useAvatarStore = defineStore('avatar', {
       // Import model from URL, add your own model here
       loader.load(
         // "https://cdn.glitch.com/29e07830-2317-4b15-a044-135e73c7f840%2FAshtra.vrm?v=1630342336981",
-        "vrm/" + id + ".vrm",
+        "vrm/" + resolvedAvatarId + ".vrm",
 
         (gltf) => {
           if (loadRequestId !== this.loadRequestId) {

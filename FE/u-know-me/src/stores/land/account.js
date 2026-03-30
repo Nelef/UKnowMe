@@ -7,6 +7,59 @@ import { useMainStore } from '../main/main'
 import { useCookies } from "vue3-cookies";
 
 const { cookies } = useCookies();
+const TEST_ACCOUNT_FORCED_AVATAR_MAP = Object.freeze({
+  test: 11,
+  test2: 21,
+});
+const LOCAL_AVATAR_SELECTION_STORAGE_KEY = 'ukm-avatar-selection-map';
+const getForcedAvatarSeqForUserId = (userId) =>
+  TEST_ACCOUNT_FORCED_AVATAR_MAP[userId] || null;
+const readLocalAvatarSelectionMap = () => {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(LOCAL_AVATAR_SELECTION_STORAGE_KEY);
+    const parsedValue = rawValue ? JSON.parse(rawValue) : {};
+    return parsedValue && typeof parsedValue === 'object' ? parsedValue : {};
+  } catch (error) {
+    console.warn('로컬 아바타 선택값을 읽는 중 오류가 발생했습니다.', error);
+    return {};
+  }
+};
+const writeLocalAvatarSelectionMap = (selectionMap) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      LOCAL_AVATAR_SELECTION_STORAGE_KEY,
+      JSON.stringify(selectionMap)
+    );
+  } catch (error) {
+    console.warn('로컬 아바타 선택값을 저장하는 중 오류가 발생했습니다.', error);
+  }
+};
+const getStoredAvatarSeqForUserId = (userId) => {
+  if (!userId) {
+    return null;
+  }
+
+  const selectionMap = readLocalAvatarSelectionMap();
+  const storedValue = Number(selectionMap[userId]);
+  return Number.isFinite(storedValue) && storedValue > 0 ? storedValue : null;
+};
+const persistAvatarSeqForUserId = (userId, avatarSeq) => {
+  if (!userId || !avatarSeq) {
+    return;
+  }
+
+  const selectionMap = readLocalAvatarSelectionMap();
+  selectionMap[userId] = avatarSeq;
+  writeLocalAvatarSelectionMap(selectionMap);
+};
 
 export const useAccountStore = defineStore('account', {
   state: () => ({
@@ -107,15 +160,49 @@ export const useAccountStore = defineStore('account', {
       main.$reset()
       router.push({ name: 'home' })
     },
-    async fetchCurrentUser() {
+    async fetchCurrentUser(options = {}) {
+      const { forceTestAvatarOnMainEntry = false } = options
+
       if (this.isLoggedIn) {
         await axios({
           url: sr.members.member(),
           method: 'get',
           headers: this.authHeader,
         })
-          .then(res => {
-            this.currentUser = res.data
+          .then(async res => {
+            const fetchedUser = res.data || {}
+            const forcedAvatarSeq = forceTestAvatarOnMainEntry
+              ? getForcedAvatarSeqForUserId(fetchedUser?.id)
+              : null
+            const storedAvatarSeq = getStoredAvatarSeqForUserId(fetchedUser?.id)
+            const currentAvatar = fetchedUser?.avatar || {}
+            const nextAvatarSeq =
+              forcedAvatarSeq ||
+              storedAvatarSeq ||
+              currentAvatar.seq ||
+              null
+
+            this.currentUser = {
+              ...fetchedUser,
+              avatar: nextAvatarSeq
+                ? {
+                    ...currentAvatar,
+                    seq: nextAvatarSeq,
+                  }
+                : currentAvatar,
+            }
+
+            if (nextAvatarSeq) {
+              persistAvatarSeqForUserId(fetchedUser?.id, nextAvatarSeq)
+            }
+
+            if (
+              nextAvatarSeq &&
+              currentAvatar.seq !== nextAvatarSeq &&
+              (forcedAvatarSeq || storedAvatarSeq)
+            ) {
+              await this.changeAvatar({ avatarSeq: nextAvatarSeq })
+            }
           })
           .catch(err => {
             if (err.response.status == 401) {
@@ -271,22 +358,39 @@ export const useAccountStore = defineStore('account', {
           })
       }
     },
-    changeAvatar(avatarId) {
-      axios({
+    async changeAvatar(avatarId) {
+      const requestedAvatarSeq = avatarId?.avatarSeq
+      const resolvedAvatarSeq = requestedAvatarSeq
+
+      if (!resolvedAvatarSeq) {
+        return false
+      }
+
+      if (!this.currentUser.avatar) {
+        this.currentUser.avatar = {}
+      }
+
+      this.currentUser.avatar.seq = resolvedAvatarSeq
+      persistAvatarSeqForUserId(this.currentUser?.id, resolvedAvatarSeq)
+
+      return await axios({
         url: sr.members.changeAvatar(),
         method: 'put',
-        data: { ...avatarId },
+        data: { avatarSeq: resolvedAvatarSeq },
         headers: this.authHeader,
       })
         .then(res => {
           if (res.data) {
             console.log('성공적으로 아바타가 변경되었습니다.')
+            return true
           } else {
             console.log('아바타 변경에 실패했습니다.')
+            return false
           }
         })
         .catch(err => {
           console.error(err.response)
+          return false
         })
     },
   },

@@ -155,6 +155,7 @@ export default {
 .signin-shortcuts {
   display: grid;
   gap: 10px;
+  align-items: stretch;
 }
 .signin-shortcuts-label {
   padding-left: 8px;
@@ -167,16 +168,26 @@ export default {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  align-items: stretch;
 }
 .signin-shortcut-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
   min-height: 50px;
+  margin: 0;
+  padding: 0 12px;
   border: 1px solid rgba(130, 39, 250, 0.14);
   border-radius: 16px;
   background: linear-gradient(180deg, #fffdfd 0%, #f5f1ff 100%);
   color: #362456;
   font-size: 15px;
   font-weight: 800;
+  line-height: 1.2;
   letter-spacing: -0.02em;
+  text-align: center;
+  white-space: nowrap;
   box-shadow:
     0 10px 18px rgba(113, 79, 176, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.82);
